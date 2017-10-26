@@ -60,31 +60,30 @@ waiting list.
 ;; - GobblerUniverse
 ;; - (make-bundle GobblerUniverse [Listof Outgoing] '())
 
-;; An Outgoing is a (make-mail iworld? ServerMessage)
+;; An Outgoing is a (make-mail iworld? Server2ClientMessage)
 ;; Represents a message that is to be sent to the iworld
 
 (struct gobbler [loc food-eaten waypoint])
-;; A Gobbler is a (gobbler posn? N posn?)
-;; - loc: the current position of the turkey
-;; - food-eaten: the number of pieces of food eaten
-;; - waypoint: the current destination of the turkey
-
-(define-struct player [iworld gobbler])
-;; A Player is a (make-player iworld? gobbler?)
-;; - iworld: the world connection struct
-;; - gobbler: the gobbler controlled by this player
-;; Maybe we will add player number here, maybe not. Future step
-
+(struct player [iworld gobbler])
 (struct game [queue])
+(struct waiting game [])
+(struct ready game [players foods time-left])
+(struct countdown ready [])
+(struct playing ready [])
+
+;; A Gobbler is a (gobbler posn? N posn?)
+;; - represents a playable turkey
+
+;; A Player is a (make-player iworld? gobbler?)
+;; - represents currently-playing player information
+
 ;; A Game is a (game [Listof iworld?])
 ;; represents the base state of the game
 ;; - queue: the players currently waiting to play
 
-(struct waiting game [])
 ;; A Waiting is a (waiting [Listof iworld?])
 ;; represents the phase where not enough players have joined
 
-(struct ready game [players foods time-left])
 ;; A Ready is a (ready [Listof iworld?]
 ;;                     [Listof player?]
 ;;                     [Listof posn?]
@@ -94,24 +93,21 @@ waiting list.
 ;; - foods: the locations of the foods
 ;; - time-left: the time left in this phase
 
-(struct countdown ready [])
 ;; A Countdown is a (countdown [Listof iworld?]
 ;;                             [Listof player?]
 ;;                             [Listof posn?]
 ;;                             N)
 ;; represents the phase just before starting a new game
 
-(struct playing ready [])
 ;; A Playing is a (make-playing [Listof iworld?]
 ;;                              [Listof player?]
 ;;                              [Listof posn?]
 ;;                              N)
 ;; represents the phase where the game is being played
 
-
 ;; PROTOCOLS
 
-;; A ServerMessage is one of:
+;; A Server2ClientMessage is one of:
 ;; - WaitingMessage
 ;; - CountdownMessage
 ;; - PlayingMessage
@@ -155,32 +151,41 @@ waiting list.
 ;; A GameOverMessage is a (list 'game-over OutcomeMessage)
 ;; Represents information on the outcome of the game
 
-(define WON 'won)
-(define LOST 'lost)
-;; An OutcomeMessage is one of:
-;; - 'won
-;; - 'lost
-;; Represents whether the receiving player won or lost
+;; An OutcomeMessage is a string?
+;; Represents the name of the winner of the game
 
-;; A GobblerMessage is a (list N N)
+;; A GobblerMessage is a (list N N N)
 ;; Represents the location of a gobbler where:
 ;; - the first number is its x coordinate
 ;; - the second number is its y coordinate
+;; - the third number is the number of foods it has eaten
 
 ;; A FoodMessage is a (list N N)
 ;; Represents the location of a gobbler where:
 ;; - the first number is its x coordinate
 ;; - the second number is its y coordinate
 
-
-
-;; A ClientMessage is a WaypointMessage
+;; A Client2ServerMessage is a WaypointMessage
 ;; Represents a message that is sent from the client to the server
 
 ;; A WaypointMessage is a (list 'waypoint N N)
 ;; Represents a message from the client to update their waypoint such that:
 ;; - the first number is the x coordinate
 ;; - the second number is the y coordinate
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
