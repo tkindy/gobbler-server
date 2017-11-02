@@ -45,11 +45,13 @@ just played are put into the end of the waiting list, and the game returns to
 the waiting phase.
 
 If at any point a new client connects, that world is added to the end of a
-waiting list. 
+waiting list.
 
 |#
 
+;; =====================================
 ;; DATA DEFINITIONS
+;; =====================================
 
 ;; A Posn is a (posn N N)
 ;; represents a Cartesian coordinate pair
@@ -109,7 +111,10 @@ waiting list.
 ;;                              N)
 ;; represents the phase where the game is being played
 
+
+;; =====================================
 ;; PROTOCOLS
+;; =====================================
 
 ;; A Server2ClientMessage is one of:
 ;; - WaitingMessage
@@ -139,7 +144,7 @@ waiting list.
 ;;   they are observing
 
 (define PLAYING 'playing)
-;; A PlayingMessage is a (list 'playing 
+;; A PlayingMessage is a (list 'playing
 ;;                             [Listof TurkeyMessage]
 ;;                             [Listof FoodMessage]
 ;;                             N
@@ -177,14 +182,22 @@ waiting list.
 ;; - the first number is the x coordinate
 ;; - the second number is the y coordinate
 
-;; Constants
+;; =====================================
+;; CONSTANTS
+;; =====================================
+
 (define TKY-STEP 10)
 (define TICKS-PER-SECOND 28)
 (define COUNTDOWN-TICKS (* TICKS-PER-SECOND 3))
 
 (define INITIAL-STATE (waiting '()))
 
-;; number? -> ???
+
+;; =====================================
+;; SERVER
+;; =====================================
+
+;; number? -> GobblerUniverse
 ;; Run the server
 (define (main the-port)
   (universe INITIAL-STATE
@@ -214,19 +227,19 @@ waiting list.
 (define (update-waypoint uni world sexp)
   uni)
 
+
+;; =====================================
+;; UTILS
+;; =====================================
+
 ;; N -> N
 ;; Convert seconds to game ticks
 (define (seconds->ticks s)
   (* s TICKS-PER-SECOND))
 
-;; ----------------------------------------------------------------------------
-;; two helper functions that rely on domain knowledge from geometry
-
-;; REVISED SIGNATURE 
-;; Posn Posn Number -> Posn 
-;; compute a Posn that is by delta closer to q than p
-;; unless p is alreay delta-close to q
-
+;; Posn Posn Number -> Posn
+;; compute a Posn that is by delta closer to q than p unless p is alreay
+;; delta-close to q
 (define (move-toward origin destination delta)
   (cond
     [(close? origin destination delta) destination]
@@ -239,19 +252,16 @@ waiting list.
 (define (close? p q delta)
   (< (distance p q) delta))
 
-;; ----------------------------------------------------------------------------
-;; a library of positions (Cartesian points) and vectors (steps between points)
-
-;; Vec is Posn.
+;; A Vec is Posn.
 ;; INTEREPRATION When we call a Posn a Vec, we think of it 'directionally'
-;; as in x over on the horizontal and y over on the verticla axis from here 
+;; as in x over on the horizontal and y over on the vertical axis from here
 
 ;; Posn Posn -> Number
 ;; compute the distance between p and q
 (define (distance p q)
   (size (posn- p q)))
 
-;; Vec -> Number 
+;; Vec -> Number
 ;; determine the size (length) of p
 (define (size p)
   (sqrt (+ (sqr (posn-x p)) (sqr (posn-y p)))))
@@ -271,8 +281,17 @@ waiting list.
 (define (posn+ p q)
   (posn (+ (posn-x p) (posn-x q)) (+ (posn-y p) (posn-y q))))
 
+
+;; =====================================
+;; TESTS
+;; =====================================
+
 (module+ test
   (require rackunit)
+
+  ;; =====================================
+  ;; TESTING CONSTANTS
+  ;; =====================================
 
   (define POSN0 (posn 40 40))
   (define POSN1 (posn 100 30))
@@ -280,11 +299,15 @@ waiting list.
   (define TURKEY0 (turkey (posn 10 10)  1 (posn 50 30)))
   (define TURKEY1 (turkey (posn 45 50)  0 (posn 45 50)))
   (define TURKEY2 (turkey (posn 30 100) 0 (posn 50 50)))
-  
+
+  (define TURKEY1.1 (turkey (posn 10 10) 1 (posn 30 20)))
+
   (define PLAYER1 (player iworld1 TURKEY0))
   (define PLAYER2 (player iworld2 TURKEY1))
   (define PLAYER3 (player iworld3 TURKEY2))
-    
+
+  (define PLAYER1.1 (player iworld1 TURKEY1.1))
+
   (define WAITING0   (waiting '()))
   (define WAITING1   (waiting `(,iworld1)))
   (define COUNTDOWN0 (countdown '() `(,PLAYER1 ,PLAYER2)
@@ -299,7 +322,15 @@ waiting list.
   (define PLAYING1   (playing `(,iworld3) `(,PLAYER1 ,PLAYER2)
                               `(,POSN0 ,POSN1) 300))
   (define PLAYING2   (playing `(,iworld3) `(,PLAYER2) `(,POSN0 ,POSN1) 300))
-  
+
+  (define PLAYING1.1
+    (playing (list iworld3) (list PLAYER1.1 PLAYER2) (list POSN0 POSN1) 300))
+
+
+  ;; =====================================
+  ;; SERVER TESTS
+  ;; =====================================
+
   (check-equal? (queue-world WAITING0 iworld1) WAITING1)
   (check-equal? (queue-world COUNTDOWN0 iworld3) COUNTDOWN1)
   (check-equal? (queue-world PLAYING0 iworld3) PLAYING1)
@@ -313,7 +344,19 @@ waiting list.
   (check-equal? (advance-game WAITING0) WAITING0)
   (check-equal? (advance-game WAITING1) WAITING1)
   (check-equal? (advance-game COUNTDOWN0) COUNTDOWN3)
-  
+
+  (check-equal? (update-waypoint PLAYING1 iworld1 '(here is some garbage))
+                PLAYING1)
+  (check-equal? (update-waypoint PLAYING1 iworld1 2) PLAYING1)
+  (check-equal? (update-waypoint PLAYING1 iworld3 '(waypoint 30 20)) PLAYING1)
+  (check-equal? (update-waypoint PLAYING1 iworld1 '(waypoint 30 20))
+                PLAYING1.1)
+
+
+  ;; =====================================
+  ;; UTILS TESTS
+  ;; =====================================
+
   (check-true (close? (move-toward (posn 12 5) (posn 24 10) 13)
            (posn 24 10)
            .1))
@@ -332,7 +375,7 @@ waiting list.
   (check-true (close? (move-toward (posn 12 5) (posn 24 10) 14)
            (posn 24 10)
            .1))
-  
+
   (check-true (close? (posn 10 10) (posn 10 9) 2.0))
   (check-true (close? (posn 10 10) (posn 10 9) 0.8))
   (check-equal? (distance (posn 3 4) (posn 0 0)) 5)
@@ -340,20 +383,5 @@ waiting list.
   (check-equal? (posn* 2 (posn 1 3)) (posn 2 6))
   (check-equal? (posn- (posn 3 2) (posn 3 8)) (posn 0 -6))
   (check-equal? (posn+ (posn 3 2) (posn 3 8)) (posn 6 10))
-                
+
   "all tests run")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
