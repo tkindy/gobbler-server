@@ -182,13 +182,19 @@ waiting list.
 ;; - the first number is the x coordinate
 ;; - the second number is the y coordinate
 
+;; N -> N
+;; Convert seconds to game ticks
+(define (seconds->ticks s)
+  (* s TICKS-PER-SECOND))
+
 ;; =====================================
 ;; CONSTANTS
 ;; =====================================
 
 (define TKY-STEP 10)
 (define TICKS-PER-SECOND 28)
-(define COUNTDOWN-TICKS (* TICKS-PER-SECOND 3))
+(define COUNTDOWN-TICKS (seconds->ticks 3))
+(define GAME-TICKS (seconds->ticks 60))
 
 (define INITIAL-STATE (waiting '()))
 
@@ -232,14 +238,13 @@ waiting list.
 ;; UTILS
 ;; =====================================
 
-;; N -> N
-;; Convert seconds to game ticks
-(define (seconds->ticks s)
-  (* s TICKS-PER-SECOND))
+;; two helper functions that rely on domain knowledge from geometry
 
+;; REVISED SIGNATURE
 ;; Posn Posn Number -> Posn
-;; compute a Posn that is by delta closer to q than p unless p is alreay
-;; delta-close to q
+;; compute a Posn that is by delta closer to q than p
+;; unless p is alreay delta-close to q
+
 (define (move-toward origin destination delta)
   (cond
     [(close? origin destination delta) destination]
@@ -310,6 +315,7 @@ waiting list.
 
   (define WAITING0   (waiting '()))
   (define WAITING1   (waiting `(,iworld1)))
+  (define WAITING2   (waiting `(,iworld1 ,iworld2)))
   (define COUNTDOWN0 (countdown '() `(,PLAYER1 ,PLAYER2)
                                 `(,POSN0 ,POSN1) COUNTDOWN-TICKS))
   (define COUNTDOWN1 (countdown `(,iworld3) `(,PLAYER1 ,PLAYER2)
@@ -318,13 +324,20 @@ waiting list.
                                 COUNTDOWN-TICKS))
   (define COUNTDOWN3 (countdown '() `(,PLAYER1 ,PLAYER2)
                                 `(,POSN0 ,POSN1) (- COUNTDOWN-TICKS 1)))
-  (define PLAYING0   (playing '() `(,PLAYER1 ,PLAYER2) `(,POSN0 ,POSN1) 300))
+  (define COUNTDOWN4 (countdown '() `(,PLAYER1 ,PLAYER2)
+                                `(,POSN0 ,POSN1) 1))
+  (define PLAYING0   (playing '() `(,PLAYER1 ,PLAYER2) `(,POSN0 ,POSN1)
+                              GAME-TICKS))
   (define PLAYING1   (playing `(,iworld3) `(,PLAYER1 ,PLAYER2)
-                              `(,POSN0 ,POSN1) 300))
-  (define PLAYING2   (playing `(,iworld3) `(,PLAYER2) `(,POSN0 ,POSN1) 300))
-
-  (define PLAYING1.1
-    (playing (list iworld3) (list PLAYER1.1 PLAYER2) (list POSN0 POSN1) 300))
+                              `(,POSN0 ,POSN1) GAME-TICKS))
+  (define PLAYING1.1 (playing `(,iworld3) `(,PLAYER1.1 ,PLAYER2)
+    `(,POSN0 ,POSN1) GAME-TICKS))
+  (define PLAYING2   (playing `(,iworld3) `(,PLAYER2) `(,POSN0 ,POSN1)
+                              GAME-TICKS))
+  (define PLAYING3   (playing '() `(,PLAYER1 ,PLAYER2) `(,POSN0 ,POSN1)
+                              (- GAME-TICKS 1)))
+  (define PLAYING4   (playing '() `(,PLAYER1 ,PLAYER2) `(,POSN0 ,POSN1)
+                              1))
 
 
   ;; =====================================
@@ -344,6 +357,9 @@ waiting list.
   (check-equal? (advance-game WAITING0) WAITING0)
   (check-equal? (advance-game WAITING1) WAITING1)
   (check-equal? (advance-game COUNTDOWN0) COUNTDOWN3)
+  (check-equal? (advance-game COUNTDOWN4) PLAYING0)
+  (check-equal? (advance-game PLAYING0) PLAYING3)
+  (check-equal? (advance-game PLAYING4) WAITING2)
 
   (check-equal? (update-waypoint PLAYING1 iworld1 '(here is some garbage))
                 PLAYING1)
