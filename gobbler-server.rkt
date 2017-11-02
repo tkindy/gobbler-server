@@ -67,18 +67,18 @@ waiting list.
 ;; An Outgoing is a (make-mail iworld? Server2ClientMessage)
 ;; Represents a message that is to be sent to the iworld
 
-(struct gobbler [loc food-eaten waypoint] #:transparent)
-(struct player [iworld gobbler] #:transparent)
+(struct turkey [loc food-eaten waypoint] #:transparent)
+(struct player [iworld turkey] #:transparent)
 (struct game [queue] #:transparent)
 (struct waiting game [] #:transparent)
 (struct ready game [players foods time-left] #:transparent)
 (struct countdown ready [] #:transparent)
 (struct playing ready [] #:transparent)
 
-;; A Gobbler is a (gobbler posn? N posn?)
+;; A Turkey is a (turkey posn? N posn?)
 ;; - represents a playable turkey
 
-;; A Player is a (make-player iworld? gobbler?)
+;; A Player is a (make-player iworld? turkey?)
 ;; - represents currently-playing player information
 
 ;; A Game is a (game [Listof iworld?])
@@ -126,29 +126,29 @@ waiting list.
 
 (define COUNTDOWN 'countdown)
 ;; A CountdownMessage is a (list 'countdown
-;;                               [Listof GobblerMessage]
+;;                               [Listof TurkeyMessage]
 ;;                               [Listof FoodMessage]
 ;;                               N
-;;                               [Maybe GobblerMessage]
+;;                               [Maybe TurkeyMessage]
 ;; Represents information on a pre-game countdown where:
-;; - the [Listof GobblerMessage] is the other gobblers that are about to play
+;; - the [Listof TurkeyMessage] is the other turkeys that are about to play
 ;;   the game
 ;; - the [Listof FoodMessage] is the locations of the foods on the board
 ;; - the N is the amount of time left before the game begins
-;; - the [Maybe GobblerMessage] is the receiving player's gobbler, or false if
+;; - the [Maybe TurkeyMessage] is the receiving player's turkey, or false if
 ;;   they are observing
 
 (define PLAYING 'playing)
 ;; A PlayingMessage is a (list 'playing 
-;;                             [Listof GobblerMessage]
+;;                             [Listof TurkeyMessage]
 ;;                             [Listof FoodMessage]
 ;;                             N
-;;                             [Maybe GobblerMessage]
+;;                             [Maybe TurkeyMessage]
 ;; Represents information on an in-progress game where:
-;; - the [Listof GobblerMessage] is other gobblers currently playing
+;; - the [Listof TurkeyMessage] is other turkeys currently playing
 ;; - the [Listof FoodMessage] is the locations of the foods on the board
 ;; - the N is the amount of time left before the game ends
-;; - the [Maybe GobblerMessage] is the receiving player's gobbler, or false if
+;; - the [Maybe TurkeyMessage] is the receiving player's turkey, or false if
 ;;   they are observing
 
 (define GAME-OVER 'game-over)
@@ -158,14 +158,14 @@ waiting list.
 ;; An OutcomeMessage is a string?
 ;; Represents the name of the winner of the game
 
-;; A GobblerMessage is a (list N N N)
-;; Represents the location of a gobbler where:
+;; A TurkeyMessage is a (list N N N)
+;; Represents the location of a turkey where:
 ;; - the first number is its x coordinate
 ;; - the second number is its y coordinate
 ;; - the third number is the number of foods it has eaten
 
 ;; A FoodMessage is a (list N N)
-;; Represents the location of a gobbler where:
+;; Represents the location of a food where:
 ;; - the first number is its x coordinate
 ;; - the second number is its y coordinate
 
@@ -227,18 +227,6 @@ waiting list.
 ;; compute a Posn that is by delta closer to q than p
 ;; unless p is alreay delta-close to q
 
-(check-within (move-toward (make-posn 12 5) (make-posn 24 10) 13)
-              (make-posn 24 10)
-              .1)
-(check-within (move-toward (make-posn 12 5) (make-posn 24 10) 6.5)
-              (make-posn 18 7.5)
-              .1)
-
-;; NEW TEST ;; MODIFIED October 2, per request by Antone on behalf of the class
-(check-within (move-toward (make-posn 12 5) (make-posn 24 10) 14)
-              (make-posn 24 10)
-              .1)
-
 (define (move-toward origin destination delta)
   (cond
     [(close? origin destination delta) destination]
@@ -248,8 +236,6 @@ waiting list.
 
 ;; Posn Posn Number -> Boolean
 ;; is the distance between p and q strictly less than delta (delta-close)
-(check-expect (close? (make-posn 10 10) (make-posn 10 9) 2.0) #true)
-(check-expect (close? (make-posn 10 10) (make-posn 10 9) 0.8) #false)
 (define (close? p q delta)
   (< (distance p q) delta))
 
@@ -262,33 +248,28 @@ waiting list.
 
 ;; Posn Posn -> Number
 ;; compute the distance between p and q
-(check-expect (distance (make-posn 3 4) (make-posn 0 0)) 5)
 (define (distance p q)
   (size (posn- p q)))
 
 ;; Vec -> Number 
 ;; determine the size (length) of p
-(check-expect (size (make-posn 12 5)) 13)
 (define (size p)
   (sqrt (+ (sqr (posn-x p)) (sqr (posn-y p)))))
 
 ;; Number Vec -> Vec
 ;; multiply s componentwise with v
-(check-expect (posn* 2 (make-posn 1 3)) (make-posn 2 6))
 (define (posn* s v)
-  (make-posn (* s (posn-x v)) (* s (posn-y v))))
+  (posn (* s (posn-x v)) (* s (posn-y v))))
 
 ;; Posn Posn -> Vec
 ;; subtract q from p componentwise to obtain a vector
-(check-expect (posn- (make-posn 3 2) (make-posn 3 8)) (make-posn 0 -6))
 (define (posn- p q)
-  (make-posn (- (posn-x p) (posn-x q)) (- (posn-y p) (posn-y q))))
+  (posn (- (posn-x p) (posn-x q)) (- (posn-y p) (posn-y q))))
 
 ;; Posn Vec -> Posn
 ;; add q to p componentwise
-(check-expect (posn+ (make-posn 3 2) (make-posn 3 8)) (make-posn 6 10))
 (define (posn+ p q)
-  (make-posn (+ (posn-x p) (posn-x q)) (+ (posn-y p) (posn-y q))))
+  (posn (+ (posn-x p) (posn-x q)) (+ (posn-y p) (posn-y q))))
 
 (module+ test
   (require rackunit)
@@ -296,13 +277,13 @@ waiting list.
   (define POSN0 (posn 40 40))
   (define POSN1 (posn 100 30))
 
-  (define GOBBLER0 (gobbler (posn 10 10)  1 (posn 50 30)))
-  (define GOBBLER1 (gobbler (posn 45 50)  0 (posn 45 50)))
-  (define GOBBLER2 (gobbler (posn 30 100) 0 (posn 50 50)))
+  (define TURKEY0 (turkey (posn 10 10)  1 (posn 50 30)))
+  (define TURKEY1 (turkey (posn 45 50)  0 (posn 45 50)))
+  (define TURKEY2 (turkey (posn 30 100) 0 (posn 50 50)))
   
-  (define PLAYER1 (player iworld1 GOBBLER0))
-  (define PLAYER2 (player iworld2 GOBBLER1))
-  (define PLAYER3 (player iworld3 GOBBLER2))
+  (define PLAYER1 (player iworld1 TURKEY0))
+  (define PLAYER2 (player iworld2 TURKEY1))
+  (define PLAYER3 (player iworld3 TURKEY2))
     
   (define WAITING0   (waiting '()))
   (define WAITING1   (waiting `(,iworld1)))
@@ -317,7 +298,7 @@ waiting list.
   (define PLAYING0   (playing '() `(,PLAYER1 ,PLAYER2) `(,POSN0 ,POSN1) 300))
   (define PLAYING1   (playing `(,iworld3) `(,PLAYER1 ,PLAYER2)
                               `(,POSN0 ,POSN1) 300))
-  (define PLAYING1   (playing `(,iworld3) `(,PLAYER2) `(,POSN0 ,POSN1) 300))
+  (define PLAYING2   (playing `(,iworld3) `(,PLAYER2) `(,POSN0 ,POSN1) 300))
   
   (check-equal? (queue-world WAITING0 iworld1) WAITING1)
   (check-equal? (queue-world COUNTDOWN0 iworld3) COUNTDOWN1)
@@ -332,6 +313,33 @@ waiting list.
   (check-equal? (advance-game WAITING0) WAITING0)
   (check-equal? (advance-game WAITING1) WAITING1)
   (check-equal? (advance-game COUNTDOWN0) COUNTDOWN3)
+  
+  (check-true (close? (move-toward (posn 12 5) (posn 24 10) 13)
+           (posn 24 10)
+           .1))
+  (check-true (close? (move-toward (posn 12 5) (posn 24 10) 6.5)
+           (posn 18 7.5)
+           .1))
+  (check-true (close? (move-toward (posn 12 5) (posn 24 10) 14)
+           (posn 24 10)
+           .1))
+  (check-true (close? (move-toward (posn 12 5) (posn 24 10) 13)
+           (posn 24 10)
+           .1))
+  (check-true (close? (move-toward (posn 12 5) (posn 24 10) 6.5)
+           (posn 18 7.5)
+           .1))
+  (check-true (close? (move-toward (posn 12 5) (posn 24 10) 14)
+           (posn 24 10)
+           .1))
+  
+  (check-true (close? (posn 10 10) (posn 10 9) 2.0))
+  (check-true (close? (posn 10 10) (posn 10 9) 0.8))
+  (check-equal? (distance (posn 3 4) (posn 0 0)) 5)
+  (check-equal? (size (posn 12 5)) 13)
+  (check-equal? (posn* 2 (posn 1 3)) (posn 2 6))
+  (check-equal? (posn- (posn 3 2) (posn 3 8)) (posn 0 -6))
+  (check-equal? (posn+ (posn 3 2) (posn 3 8)) (posn 6 10))
                 
   "all tests run")
 
