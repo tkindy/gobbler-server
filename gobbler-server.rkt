@@ -198,6 +198,8 @@ waiting list.
 
 (define INITIAL-STATE (waiting '()))
 
+(define GAME-SIZE 600)
+
 
 ;; =====================================
 ;; SERVER
@@ -257,7 +259,21 @@ waiting list.
 
 ;; two helper functions that rely on domain knowledge from geometry
 
-;; REVISED SIGNATURE
+;; sexp? -> Boolean
+;; Determines if the given sexp is a valid well-formed message
+(define (c2s-message? sexp)
+  #false)
+
+;; sexp? -> Boolean
+;; Determines if the given sexp is a well-formed waypoint message
+(define (waypoint-message? sexp)
+  #false)
+
+;; Posn -> Boolean
+;; Determines if the waypoint is valid
+(define (waypoint-reachable? posn)
+  #false)
+
 ;; Posn Posn Number -> Posn
 ;; compute a Posn that is by delta closer to q than p
 ;; unless p is alreay delta-close to q
@@ -449,6 +465,28 @@ waiting list.
      ;; =====================================
      ;; UTILS TESTS
      ;; =====================================
+
+
+     (check-true (c2s-message? '(waypoint 2 2)))
+     (check-true (c2s-message? '(waypoint -1 2345)))
+     (check-false (c2s-message? '(garbage 1 2)))
+     (check-false (c2s-message? 'garbage))
+
+     (check-true (waypoint-message? '(waypoint 3 3)))
+     (check-true (waypoint-message? '(waypoint -23 234)))
+     (check-false (waypoint-message? '(waypoint 1 2 3)))
+     (check-false (waypoint-message? '(waypoint 2)))
+     (check-false (waypoint-message? '(garbage 1 2)))
+     (check-false (waypoint-message? 'waypoint))
+     (check-false (waypoint-message? '(1 2)))
+     (check-false (waypoint-message? '(1 2 3)))
+     (check-false (waypoint-message? 4))
+
+     (check-true (waypoint-reachable? (posn 0 0)))
+     (check-true (waypoint-reachable? (posn GAME-SIZE GAME-SIZE)))
+     (check-false (waypoint-reachable? (posn (add1 GAME-SIZE) (add1 GAME-SIZE))))
+     (check-false (waypoint-reachable? (posn -1 -1)))
+
      (λ ()
        (check-true (close? (move-toward (posn 12 5) (posn 24 10) 13)
                            (posn 24 10)
