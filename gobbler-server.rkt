@@ -484,76 +484,64 @@ waiting list.
        (check-equal? (advance-game PLAYING4) WAITING2))
 
      (λ ()
-       (check-equal? (update-waypoint PLAYING1 iworld1 '(here is some garbage))
+       (check-equal? (update-waypoint! PLAYING1 iworld1 '(here is some garbage))
                      PLAYING1)
-       (check-equal? (update-waypoint PLAYING1 iworld1 2)
+       (check-equal? (update-waypoint! PLAYING1 iworld1 2)
                      PLAYING1)
-       (check-equal? (update-waypoint PLAYING1 iworld3 '(waypoint 30 20))
+       (check-equal? (update-waypoint! PLAYING1 iworld3 '(waypoint 30 20))
                      PLAYING1)
-       (check-equal? (update-waypoint PLAYING1 iworld1 '(waypoint 30 20))
+       (check-equal? (update-waypoint! WAITING1 iworld1 '(waypoint 30 20))
+                     WAITING1)
+       (check-equal? (update-waypoint! PLAYING1 iworld1 '(waypoint -1000 -1000))
+                     PLAYING1)
+       (check-equal? (update-waypoint! PLAYING1 iworld1 '(waypoint 30 20))
                      PLAYING1.1))
-
-                     (check-equal? (let [(playing PLAYING1)]
-                                     (update-waypoint! playing iworld1 '(here is some garbage)))
-                                   PLAYING1)
-                     (check-equal? (let [(playing PLAYING1)]
-                                     (update-waypoint! playing iworld1 2))
-                                   PLAYING1)
-                     (check-equal? (let [(playing PLAYING1)]
-                                     (update-waypoint! playing iworld3 '(waypoint 30 20)))
-                                   PLAYING1)
-                     (check-equal? (let [(waiting WAITING1)]
-                                     (update-waypoint! waiting iworld1 '(waypoint 30 20)))
-                                   WAITING1)
-                     (check-equal? (let [(playing PLAYING1)]
-                                     (update-waypoint! playing iworld1 '(waypoint -1000 -1000)))
-                                   PLAYING1)
-                     (check-equal? (let [(playing PLAYING1)]
-                                     (update-waypoint! playing iworld1 '(waypoint 30 20)))
-                                   PLAYING1.1)
-
-                     (check-equal? (let [(playing PLAYING1)]
-                                     (update-waypoint! playing iworld3 '(waypoint 30 20)))
-                                   PLAYING1)
-                     (check-equal? (let [(playing PLAYING1)]
-                                     (update-waypoint! playing iworld1 '(waypoint -1000 -1000)))
-                                   PLAYING1)
-                     (check-equal? (let [(playing PLAYING1)]
-                                     (handle-waypoint! playing iworld1 '(waypoint 30 20)))
-                                   PLAYING1.1)
+     
+     (λ ()
+       (check-equal? (update-waypoint! PLAYING1 iworld3 '(waypoint 30 20))
+                     PLAYING1)
+       (check-equal? (update-waypoint! PLAYING1 iworld1 '(waypoint -1000 -1000))
+                     PLAYING1)
+       (check-equal? (handle-waypoint! PLAYING1 iworld1 '(waypoint 30 20))
+                     PLAYING1.1))
 
      ;; =====================================
      ;; UTILS TESTS
      ;; =====================================
 
+     (λ ()
+       (check-equal? (get-player PLAYING1 iworld1) PLAYER1)
+       (check-equal? (get-player PLAYING2 iworld2) PLAYER2)
+       (check-false (get-player PLAYING2 iworld3)))
 
-     (check-equal? (get-player PLAYING1 iworld1) PLAYER1)
-     (check-equal? (get-player PLAYING2 iworld2) PLAYER2)
-     (check-false (get-player PLAYING2 iworld3))
+     (λ ()
+       (check-true (c2s-message? '(waypoint 2 2)))
+       (check-true (c2s-message? '(waypoint -1 2345)))
+       (check-false (c2s-message? '(garbage 1 2)))
+       (check-false (c2s-message? 'garbage)))
 
-     (check-true (c2s-message? '(waypoint 2 2)))
-     (check-true (c2s-message? '(waypoint -1 2345)))
-     (check-false (c2s-message? '(garbage 1 2)))
-     (check-false (c2s-message? 'garbage))
+     (λ ()
+       (check-true (waypoint-message? '(waypoint 3 3)))
+       (check-true (waypoint-message? '(waypoint -23 234)))
+       (check-false (waypoint-message? '(waypoint 1 2 3)))
+       (check-false (waypoint-message? '(waypoint 2)))
+       (check-false (waypoint-message? '(garbage 1 2)))
+       (check-false (waypoint-message? 'waypoint))
+       (check-false (waypoint-message? '(1 2)))
+       (check-false (waypoint-message? '(1 2 3)))
+       (check-false (waypoint-message? 4)))
 
-     (check-true (waypoint-message? '(waypoint 3 3)))
-     (check-true (waypoint-message? '(waypoint -23 234)))
-     (check-false (waypoint-message? '(waypoint 1 2 3)))
-     (check-false (waypoint-message? '(waypoint 2)))
-     (check-false (waypoint-message? '(garbage 1 2)))
-     (check-false (waypoint-message? 'waypoint))
-     (check-false (waypoint-message? '(1 2)))
-     (check-false (waypoint-message? '(1 2 3)))
-     (check-false (waypoint-message? 4))
+     (λ ()
+       (check-equal? (waypoint-message->posn '(waypoint 0 0)) (posn 0 0))
+       (check-equal? (waypoint-message->posn '(waypoint 10 100)) (posn 10 100))
+       (check-equal? (waypoint-message->posn '(waypoint -10 10)) (posn -10 10)))
 
-     (check-equal? (waypoint-message->posn '(waypoint 0 0)) (posn 0 0))
-     (check-equal? (waypoint-message->posn '(waypoint 100 100)) (posn 100 100))
-     (check-equal? (waypoint-message->posn '(waypoint -10 1000)) (posn -10 1000))
-
-     (check-true (waypoint-reachable? (posn 0 0)))
-     (check-true (waypoint-reachable? (posn GAME-SIZE GAME-SIZE)))
-     (check-false (waypoint-reachable? (posn (add1 GAME-SIZE) (add1 GAME-SIZE))))
-     (check-false (waypoint-reachable? (posn -1 -1)))
+     (λ ()
+       (check-true (waypoint-reachable? (posn 0 0)))
+       (check-true (waypoint-reachable? (posn GAME-SIZE GAME-SIZE)))
+       (check-false
+        (waypoint-reachable? (posn (add1 GAME-SIZE) (add1 GAME-SIZE))))
+       (check-false (waypoint-reachable? (posn -1 -1))))
 
      (λ ()
        (check-true (close? (move-toward (posn 12 5) (posn 24 10) 13)
