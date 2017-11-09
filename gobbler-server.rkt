@@ -71,7 +71,7 @@ waiting list.
 
 (struct turkey [loc food-eaten waypoint] #:transparent)
 (struct player [iworld turkey] #:transparent)
-(struct game [queue] #:transparent)
+(struct game [queue] #:transparent #:mutable)
 (struct waiting game [] #:transparent)
 (struct ready game [players foods time-left] #:transparent)
 (struct countdown ready [] #:transparent)
@@ -208,14 +208,16 @@ waiting list.
 (define (main the-port)
   (universe INITIAL-STATE
             [port the-port]
-            [on-new queue-world]
+            [on-new queue-world!]
             [on-disconnect drop-world]
             [on-tick advance-game (/ TICKS-PER-SECOND)]
             [on-msg update-waypoint]))
 
-;; GobblerUniverse iworld? -> GobblerBundle
+;; GobblerUniverse iworld? -> GobblerUniverse
 ;; Queue the new player
-(define (queue-world uni world)
+(define (queue-world! uni world)
+  (define new-queue (cons world (game-queue uni)))
+  (set-game-queue! uni new-queue)
   uni)
 
 ;; GobblerUniverse iworld? -> GobblerBundle
@@ -372,7 +374,7 @@ waiting list.
     (for ([test tests])
       (run-test test))
     "all tests run")
-  
+
   ;; [A] (-> A) -> A
   ;; Initialize the test data and run the test
   (define (run-test test-f)
@@ -386,9 +388,9 @@ waiting list.
      ;; SERVER TESTS
      ;; =====================================
      (λ ()
-       (check-equal? (queue-world WAITING0 iworld1) WAITING1)
-       (check-equal? (queue-world COUNTDOWN0 iworld3) COUNTDOWN1)
-       (check-equal? (queue-world PLAYING0 iworld3) PLAYING1))
+       (check-equal? (queue-world! WAITING0 iworld1) WAITING1)
+       (check-equal? (queue-world! COUNTDOWN0 iworld3) COUNTDOWN1)
+       (check-equal? (queue-world! PLAYING0 iworld3) PLAYING1))
 
      (λ ()
        (check-equal? (drop-world WAITING1 iworld1) WAITING0)
