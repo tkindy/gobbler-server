@@ -436,14 +436,25 @@ waiting list.
                            .1))
        (check-true (close? (move-toward (posn 12 5) (posn 24 10) 14)
                            (posn 24 10)
-                           .1))
+                           .1)))
 
+     (λ ()
        (check-true (close? (posn 10 10) (posn 10 9) 2.0))
-       (check-true (close? (posn 10 10) (posn 10 9) 0.8))
-       (check-equal? (distance (posn 3 4) (posn 0 0)) 5)
-       (check-equal? (size (posn 12 5)) 13)
-       (check-equal? (posn* 2 (posn 1 3)) (posn 2 6))
-       (check-equal? (posn- (posn 3 2) (posn 3 8)) (posn 0 -6))
+       (check-true (close? (posn 10 10) (posn 10 9) 0.8)))
+
+     (λ ()
+       (check-equal? (distance (posn 3 4) (posn 0 0)) 5))
+
+     (λ ()
+       (check-equal? (size (posn 12 5)) 13))
+
+     (λ ()
+       (check-equal? (posn* 2 (posn 1 3)) (posn 2 6)))
+
+     (λ ()
+       (check-equal? (posn- (posn 3 2) (posn 3 8)) (posn 0 -6)))
+
+     (λ ()
        (check-equal? (posn+ (posn 3 2) (posn 3 8)) (posn 6 10)))))
 
   (run-tests tests))
