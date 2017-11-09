@@ -209,7 +209,7 @@ waiting list.
   (universe INITIAL-STATE
             [port the-port]
             [on-new queue-world!]
-            [on-disconnect drop-world]
+            [on-disconnect drop-world!]
             [on-tick advance-game (/ TICKS-PER-SECOND)]
             [on-msg update-waypoint]))
 
@@ -222,7 +222,7 @@ waiting list.
 
 ;; GobblerUniverse iworld? -> GobblerBundle
 ;; Remove player from the game
-(define (drop-world uni world)
+(define (drop-world! uni world)
   (set-game-queue! uni (drop-queued (game-queue uni) world))
   (when (ready? uni)
     (set-ready-players! uni (drop-player (ready-players uni) world)))
@@ -418,13 +418,13 @@ waiting list.
        (check-equal? (queue-world! PLAYING0 iworld3) PLAYING1))
 
      (λ ()
-       (check-equal? (drop-world WAITING1 iworld1) WAITING0)
-       (check-equal? (drop-world COUNTDOWN1 iworld3) COUNTDOWN0)
-       (check-equal? (drop-world PLAYING1 iworld3) PLAYING0))
+       (check-equal? (drop-world! WAITING1 iworld1) WAITING0)
+       (check-equal? (drop-world! COUNTDOWN1 iworld3) COUNTDOWN0)
+       (check-equal? (drop-world! PLAYING1 iworld3) PLAYING0))
 
      (λ ()
-       (check-equal? (drop-world COUNTDOWN1 iworld1) COUNTDOWN2)
-       (check-equal? (drop-world PLAYING1 iworld1) PLAYING2))
+       (check-equal? (drop-world! COUNTDOWN1 iworld1) COUNTDOWN2)
+       (check-equal? (drop-world! PLAYING1 iworld1) PLAYING2))
 
      (λ ()
        (check-equal? (drop-queued '() iworld1) '())
