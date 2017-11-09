@@ -442,7 +442,7 @@ waiting list.
 
      (λ ()
        (check-true (close? (posn 10 10) (posn 10 9) 2.0))
-       (check-true (close? (posn 10 10) (posn 10 9) 0.8)))
+       (check-false (close? (posn 10 10) (posn 10 9) 0.8)))
 
      (λ ()
        (check-equal? (distance (posn 3 4) (posn 0 0)) 5))
