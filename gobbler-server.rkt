@@ -69,7 +69,7 @@ waiting list.
 ;; An Outgoing is a (make-mail iworld? Server2ClientMessage)
 ;; Represents a message that is to be sent to the iworld
 
-(struct turkey [loc food-eaten [waypoint #:mutable]] #:transparent)
+(struct turkey [loc food-eaten waypoint] #:mutable #:transparent)
 (struct player [iworld turkey] #:transparent)
 (struct game [queue] #:transparent #:mutable)
 (struct waiting game [] #:transparent)
@@ -251,11 +251,9 @@ waiting list.
 ;; GobblerUniverse iworld? sexp? -> GobblerBundle
 ;; Update the waypoint of the player
 (define (update-waypoint! uni world sexp)
- (cond [(playing? uni)
-        (cond [(waypoint-message? sexp)
-               (handle-waypoint! uni world sexp)]
-              [else uni])]
-       [else uni]))
+  (if (and (playing? uni) (waypoint-message? sexp))
+    (handle-waypoint! uni world sexp)
+    uni))
 
 ;; Playing iworld? WaypointMessage -> GobblerBundle
 ;; Update the waypoint of the player
@@ -278,7 +276,7 @@ waiting list.
   (findf (λ (p) (iworld=? world (player-iworld p))) (ready-players playing)))
 
 ;; sexp? -> Boolean
-;; Determines if the given sexp is a valid well-formed message
+;; Determines if the given sexp is a valid well-formed client to server message
 (define (c2s-message? sexp)
   (waypoint-message? sexp))
 
@@ -300,10 +298,8 @@ waiting list.
 ;; Posn -> Boolean
 ;; Determines if the waypoint is valid
 (define (waypoint-reachable? posn)
-  (and (>= (posn-x posn) 0)
-       (>= (posn-y posn) 0)
-       (<= (posn-x posn) GAME-SIZE)
-       (<= (posn-y posn) GAME-SIZE)))
+  (and (<= 0 (posn-x posn) GAME-SIZE)
+       (<= 0 (posn-y posn) GAME-SIZE)))
 
 ;; Posn Posn Number -> Posn
 ;; compute a Posn that is by delta closer to q than p
