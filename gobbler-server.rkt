@@ -232,23 +232,13 @@ waiting list.
 ;; [Listof iworld?] iworld? -> [Listof iworld?]
 ;; Drop the iworld from the game queue
 (define (drop-queued queue world)
-  (drop-first (λ (other) (iworld=? world other))
-              queue))
+  (remove world queue))
 
 ;; [Listof player?] iworld? -> [Listof player?]
 ;; Drop the player with the iworld from the game
 (define (drop-player players world)
-  (drop-first (λ (player) (iworld=? world (player-iworld player)))
-              players))
-
-;; [A] (A -> Boolean) [Listof A] -> [Listof A]
-;; Drop the first match of pred in l
-(define (drop-first pred l)
-  (cond
-    [(empty? l) '()]
-    [else (if (pred (first l))
-              (rest l)
-              (cons (first l) (drop-first pred (rest l))))]))
+  (filter (λ (player) (not (iworld=? world (player-iworld player))))
+          players))
 
 ;; GobblerUniverse -> GobblerBundle
 ;; Advance the game state
@@ -478,13 +468,6 @@ waiting list.
        (check-true (close? (move-toward (posn 12 5) (posn 24 10) 14)
                            (posn 24 10)
                            .1)))
-
-     (λ ()
-       (check-equal? (drop-first string? '()) '())
-       (check-equal? (drop-first string? '(1 2 3)) '(1 2 3))
-       (check-equal? (drop-first string? '(1 "hi" 3)) '(1 3))
-       (check-equal? (drop-first string? '(1 "hi" "bye" "world" 3 "!"))
-                     '(1 "bye" "world" 3 "!")))
 
      (λ ()
        (check-true (close? (posn 10 10) (posn 10 9) 2.0))
