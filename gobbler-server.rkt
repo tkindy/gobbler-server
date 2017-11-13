@@ -73,7 +73,7 @@ waiting list.
 (struct player [iworld turkey] #:transparent)
 (struct game [queue] #:transparent #:mutable)
 (struct waiting game [] #:transparent)
-(struct ready game [players foods time-left] #:transparent)
+(struct ready game [players foods time-left] #:transparent #:mutable)
 (struct countdown ready [] #:transparent)
 (struct playing ready [] #:transparent)
 
@@ -209,7 +209,7 @@ waiting list.
   (universe INITIAL-STATE
             [port the-port]
             [on-new queue-world!]
-            [on-disconnect drop-world]
+            [on-disconnect drop-world!]
             [on-tick advance-game (/ TICKS-PER-SECOND)]
             [on-msg update-waypoint]))
 
@@ -222,8 +222,23 @@ waiting list.
 
 ;; GobblerUniverse iworld? -> GobblerBundle
 ;; Remove player from the game
-(define (drop-world uni world)
+(define (drop-world! uni world)
+  (set-game-queue! uni (drop-queued (game-queue uni) world))
+  (when (ready? uni)
+    (set-ready-players! uni (drop-player (ready-players uni) world)))
+  
   uni)
+
+;; [Listof iworld?] iworld? -> [Listof iworld?]
+;; Drop the iworld from the game queue
+(define (drop-queued queue world)
+  (remove world queue))
+
+;; [Listof player?] iworld? -> [Listof player?]
+;; Drop the player with the iworld from the game
+(define (drop-player players world)
+  (filter (λ (player) (not (iworld=? world (player-iworld player))))
+          players))
 
 ;; GobblerUniverse -> GobblerBundle
 ;; Advance the game state
@@ -393,11 +408,25 @@ waiting list.
        (check-equal? (queue-world! PLAYING0 iworld3) PLAYING1))
 
      (λ ()
-       (check-equal? (drop-world WAITING1 iworld1) WAITING0)
-       (check-equal? (drop-world COUNTDOWN1 iworld3) COUNTDOWN0)
-       (check-equal? (drop-world COUNTDOWN1 iworld1) COUNTDOWN2)
-       (check-equal? (drop-world PLAYING1 iworld3) PLAYING0)
-       (check-equal? (drop-world PLAYING1 iworld1) PLAYING2))
+       (check-equal? (drop-world! WAITING1 iworld1) WAITING0)
+       (check-equal? (drop-world! COUNTDOWN1 iworld3) COUNTDOWN0)
+       (check-equal? (drop-world! PLAYING1 iworld3) PLAYING0))
+
+     (λ ()
+       (check-equal? (drop-world! COUNTDOWN1 iworld1) COUNTDOWN2)
+       (check-equal? (drop-world! PLAYING1 iworld1) PLAYING2))
+
+     (λ ()
+       (check-equal? (drop-queued '() iworld1) '())
+       (check-equal? (drop-queued `(,iworld1) iworld1) '())
+       (check-equal? (drop-queued `(,iworld1 ,iworld2 ,iworld3) iworld2)
+                     `(,iworld1 ,iworld3)))
+
+     (λ ()
+       (check-equal? (drop-player '() iworld1) '())
+       (check-equal? (drop-player `(,PLAYER1) iworld1) '())
+       (check-equal? (drop-player `(,PLAYER1 ,PLAYER2 ,PLAYER3) iworld2)
+                     `(,PLAYER1 ,PLAYER3)))
 
      (λ ()
        (check-equal? (advance-game WAITING0) WAITING0)
