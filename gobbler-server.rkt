@@ -69,7 +69,7 @@ waiting list.
 ;; An Outgoing is a (make-mail iworld? Server2ClientMessage)
 ;; Represents a message that is to be sent to the iworld
 
-(struct turkey [loc food-eaten waypoint] #:transparent)
+(struct turkey [loc food-eaten waypoint] #:mutable #:transparent)
 (struct player [iworld turkey] #:transparent)
 (struct game [queue] #:transparent #:mutable)
 (struct waiting game [] #:transparent)
@@ -177,6 +177,7 @@ waiting list.
 ;; A Client2ServerMessage is a WaypointMessage
 ;; Represents a message that is sent from the client to the server
 
+(define WAYPOINT 'waypoint)
 ;; A WaypointMessage is a (list 'waypoint N N)
 ;; Represents a message from the client to update their waypoint such that:
 ;; - the first number is the x coordinate
@@ -198,6 +199,8 @@ waiting list.
 
 (define INITIAL-STATE (waiting '()))
 
+(define GAME-SIZE 600)
+
 
 ;; =====================================
 ;; SERVER
@@ -211,7 +214,7 @@ waiting list.
             [on-new queue-world!]
             [on-disconnect drop-world!]
             [on-tick advance-game (/ TICKS-PER-SECOND)]
-            [on-msg update-waypoint]))
+            [on-msg update-waypoint!]))
 
 ;; GobblerUniverse iworld? -> GobblerUniverse
 ;; Queue the new player
@@ -247,17 +250,57 @@ waiting list.
 
 ;; GobblerUniverse iworld? sexp? -> GobblerBundle
 ;; Update the waypoint of the player
-(define (update-waypoint uni world sexp)
-  uni)
+(define (update-waypoint! uni world sexp)
+  (if (and (playing? uni) (waypoint-message? sexp))
+    (handle-waypoint! uni world sexp)
+    uni))
 
+;; Playing iworld? WaypointMessage -> GobblerBundle
+;; Update the waypoint of the player
+(define (handle-waypoint! playing world waypoint-msg)
+  (define waypoint (waypoint-message->posn waypoint-msg))
+  (define player (get-player playing world))
+
+  (when (and (waypoint-reachable? waypoint) player)
+    (set-turkey-waypoint! (player-turkey player) waypoint))
+  playing)
 
 ;; =====================================
 ;; UTILS
 ;; =====================================
 
-;; two helper functions that rely on domain knowledge from geometry
+;; Playing iworld? -> [Maybe Player]
+;; Returns the player that corresponds with the given iworld or false if no such
+;; player exists
+(define (get-player playing world)
+  (findf (λ (p) (iworld=? world (player-iworld p))) (ready-players playing)))
 
-;; REVISED SIGNATURE
+;; sexp? -> Boolean
+;; Determines if the given sexp is a valid well-formed client to server message
+(define (c2s-message? sexp)
+  (waypoint-message? sexp))
+
+;; sexp? -> Boolean
+;; Determines if the given sexp is a well-formed waypoint message
+(define (waypoint-message? sexp)
+  (and (list? sexp)
+       (= (length sexp) 3)
+       (symbol? (first sexp))
+       (symbol=? (first sexp) WAYPOINT)
+       (number? (second sexp))
+       (number? (third sexp))))
+
+;; WaypointMessage -> Posn
+;; Converts the given waypoint message into a posn
+(define (waypoint-message->posn waypoint)
+  (posn (second waypoint) (third waypoint)))
+
+;; Posn -> Boolean
+;; Determines if the waypoint is valid
+(define (waypoint-reachable? posn)
+  (and (<= 0 (posn-x posn) GAME-SIZE)
+       (<= 0 (posn-y posn) GAME-SIZE)))
+
 ;; Posn Posn Number -> Posn
 ;; compute a Posn that is by delta closer to q than p
 ;; unless p is alreay delta-close to q
@@ -437,18 +480,65 @@ waiting list.
        (check-equal? (advance-game PLAYING4) WAITING2))
 
      (λ ()
-       (check-equal? (update-waypoint PLAYING1 iworld1 '(here is some garbage))
+       (check-equal? (update-waypoint! PLAYING1 iworld1 '(here is some garbage))
                      PLAYING1)
-       (check-equal? (update-waypoint PLAYING1 iworld1 2)
+       (check-equal? (update-waypoint! PLAYING1 iworld1 2)
                      PLAYING1)
-       (check-equal? (update-waypoint PLAYING1 iworld3 '(waypoint 30 20))
+       (check-equal? (update-waypoint! PLAYING1 iworld3 '(waypoint 30 20))
                      PLAYING1)
-       (check-equal? (update-waypoint PLAYING1 iworld1 '(waypoint 30 20))
+       (check-equal? (update-waypoint! WAITING1 iworld1 '(waypoint 30 20))
+                     WAITING1)
+       (check-equal? (update-waypoint! PLAYING1 iworld1 '(waypoint -1000 -1000))
+                     PLAYING1)
+       (check-equal? (update-waypoint! PLAYING1 iworld1 '(waypoint 30 20))
+                     PLAYING1.1))
+     
+     (λ ()
+       (check-equal? (update-waypoint! PLAYING1 iworld3 '(waypoint 30 20))
+                     PLAYING1)
+       (check-equal? (update-waypoint! PLAYING1 iworld1 '(waypoint -1000 -1000))
+                     PLAYING1)
+       (check-equal? (handle-waypoint! PLAYING1 iworld1 '(waypoint 30 20))
                      PLAYING1.1))
 
      ;; =====================================
      ;; UTILS TESTS
      ;; =====================================
+
+     (λ ()
+       (check-equal? (get-player PLAYING1 iworld1) PLAYER1)
+       (check-equal? (get-player PLAYING2 iworld2) PLAYER2)
+       (check-false (get-player PLAYING2 iworld3)))
+
+     (λ ()
+       (check-true (c2s-message? '(waypoint 2 2)))
+       (check-true (c2s-message? '(waypoint -1 2345)))
+       (check-false (c2s-message? '(garbage 1 2)))
+       (check-false (c2s-message? 'garbage)))
+
+     (λ ()
+       (check-true (waypoint-message? '(waypoint 3 3)))
+       (check-true (waypoint-message? '(waypoint -23 234)))
+       (check-false (waypoint-message? '(waypoint 1 2 3)))
+       (check-false (waypoint-message? '(waypoint 2)))
+       (check-false (waypoint-message? '(garbage 1 2)))
+       (check-false (waypoint-message? 'waypoint))
+       (check-false (waypoint-message? '(1 2)))
+       (check-false (waypoint-message? '(1 2 3)))
+       (check-false (waypoint-message? 4)))
+
+     (λ ()
+       (check-equal? (waypoint-message->posn '(waypoint 0 0)) (posn 0 0))
+       (check-equal? (waypoint-message->posn '(waypoint 10 100)) (posn 10 100))
+       (check-equal? (waypoint-message->posn '(waypoint -10 10)) (posn -10 10)))
+
+     (λ ()
+       (check-true (waypoint-reachable? (posn 0 0)))
+       (check-true (waypoint-reachable? (posn GAME-SIZE GAME-SIZE)))
+       (check-false
+        (waypoint-reachable? (posn (add1 GAME-SIZE) (add1 GAME-SIZE))))
+       (check-false (waypoint-reachable? (posn -1 -1))))
+
      (λ ()
        (check-true (close? (move-toward (posn 12 5) (posn 24 10) 13)
                            (posn 24 10)
