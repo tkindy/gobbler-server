@@ -200,6 +200,7 @@ waiting list.
 (define INITIAL-STATE (waiting '()))
 
 (define GAME-SIZE 600)
+(define CLOSE (/ GAME-SIZE 100)) 
 
 
 ;; =====================================
@@ -247,6 +248,117 @@ waiting list.
 ;; Advance the game state
 (define (advance-game uni)
   uni)
+;; -----------------------------------------------------------------------------
+;; update-gobbler : Gobbler -> Gobbler
+;; Move all the turkeys toward their goal and update the time left
+
+#|
+(define (update-gobbler gobbler)
+  (local [;; update the turkeys and food
+          (define new-data
+            (update-turkeys-and-food
+             (cons (gobble-player gobbler) (gobble-ai gobbler))
+             (gobble-food gobbler)))]
+  (make-gobble
+   (sub1 (gobble-time gobbler))
+   (move-all-turkeys (rest (first new-data)))
+   (move-turkey (first (first new-data)))
+   (second new-data))))
+
+;; update-turkeys-and-food : [List-of Turkey] [List-of Food] -> (list [List-of Turkey] [List-of Food])
+;; Fatten turkeys who ate food and remove the food they ate
+(define (update-turkeys-and-food lot lof)
+  (local [(define (update-turkeys-with-food afood sofar)
+            (list (fatten-first-turkey (first sofar) afood)
+                  (if (was-eaten? (first sofar) afood) (second sofar)
+                      (cons afood (second sofar)))))]
+  (foldr update-turkeys-with-food (list lot '()) lof)))
+
+;; fatten-first-turkey : [List-of Turkey] Food -> [List-of Turkey]
+;; Fatten the first turkey to eat this food (if any)
+(define (fatten-first-turkey all-turkeys afood)
+  (cond [(empty? all-turkeys) '()]
+        [(cons? all-turkeys)
+         (if (turkey-eat-food? (first all-turkeys) afood)
+             (cons (fatten-turkey (first all-turkeys)) (rest all-turkeys))
+             (cons (first all-turkeys) (fatten-first-turkey (rest all-turkeys) afood)))]))
+
+;; fatten-turkey : Turkey -> Turkey
+;; Increase the size of the given turkey
+(define (fatten-turkey aturkey)
+  (make-turkey (add1 (turkey-size aturkey)) (turkey-color aturkey)
+               (turkey-loc aturkey) (turkey-goal aturkey)))
+
+;; was-eaten? : [List-of Turkey] Food -> Boolean
+;; Was the given food eaten by any turkey?
+(define (was-eaten? all-turkeys afood)
+  (ormap (λ (t) (turkey-eat-food? t afood)) all-turkeys))
+
+;; move-all-turkeys : [List-of Turkey] -> [List-of Turkey]
+;; Move all the turkeys in the list towards their goal
+(define (move-all-turkeys lot)
+  (map move-turkey lot))
+
+;; move-turkey : Turkey -> Turkey
+;; Move a single turkey towards its goal if it exists
+(define (move-turkey aturkey)
+  (make-turkey
+   (turkey-size aturkey)
+   (turkey-color aturkey)
+   (translate-loc (turkey-loc aturkey) (turkey-goal aturkey) 10) ;; MAGIC CONST.
+   (turkey-goal aturkey)))
+
+;; OptPosn Posn Number -> Posn
+;; translate the given OptPosn (if any) toward the goal 
+(define (translate-loc loc goal close)
+  (cond
+    [(false? goal) loc]
+    [(posn? goal) (move-toward loc goal close)]))
+|#
+
+
+
+;; [Listof Turkey] [Listof Posn] -> [Listof Turkey]
+;; Fatten all turkeys who eat food (no food should be eaten twice)
+;; Uses accumulator-style design (remove foods each turkey eats as it goes)
+(define (eat* all-turkeys all-food)
+  (cond
+    [(empty? all-turkeys) '()]
+    [(cons? all-turkeys)
+     (define new-turkey (turkey-eat (first all-turkeys) all-food))
+     (define new-food (was-eaten/single-turkey (first all-turkeys) all-food))
+     (cons new-turkey (eat* (rest all-turkeys) new-food))]))
+
+;; Turkey [Listof Posn] -> Turkey
+;; Fatten the turkey if it ate any food
+(define (turkey-eat aturkey all-food)
+  (foldr (λ (afood sofar) (eat-food-if-close sofar afood)) aturkey all-food))
+
+;; Turkey Posn -> Turkey
+;; Increase the size of a turkey if it is close to some food
+(define (eat-food-if-close aturkey afood)
+  (when (turkey-eat-food? aturkey afood)
+    (set-turkey-food-eaten! aturkey (add1 (turkey-food-eaten aturkey))))
+  aturkey)
+
+;; Turkey [Listof Posn] -> [Listof Posn]
+;; Remove any food the turkey has eaten
+(define (was-eaten/single-turkey aturkey all-food)
+  (filter (λ (afood) (not (turkey-eat-food? aturkey afood))) all-food))
+
+;; [Listof Turkey] [Listof Posn] -> [Listof Posn]
+;; Remove any food that has been eaten by any turkey
+(define (was-eaten* lot lof)
+  (define (uneaten? afood)
+    (andmap (λ (t) (not (turkey-eat-food? t afood))) lot))
+  (filter uneaten? lof))
+
+;; Turkey Posn -> Boolean
+;; Has the turkey eaten the food?
+(define (turkey-eat-food? aturkey afood)
+  (close? (turkey-loc aturkey) afood CLOSE))
+
+;; -----------------------------------------------------------------------------
 
 ;; GobblerUniverse iworld? sexp? -> GobblerBundle
 ;; Update the waypoint of the player
@@ -364,6 +476,8 @@ waiting list.
   (define TURKEY1    null)
   (define TURKEY2    null)
   (define TURKEY1.1  null)
+  (define TURKEY1.2  null)
+  (define TURKEY2.1  null)
   (define PLAYER1    null)
   (define PLAYER2    null)
   (define PLAYER3    null)
@@ -393,6 +507,8 @@ waiting list.
     (set! TURKEY2 (turkey (posn 30 100) 0 (posn 50 50)))
 
     (set! TURKEY1.1 (turkey (posn 10 10) 1 (posn 30 20)))
+    (set! TURKEY1.2 (turkey (posn 45 50) 1 (posn 45 50)))
+    (set! TURKEY2.1 (turkey (posn 30 100) 1 (posn 50 50)))
 
     (set! PLAYER1 (player iworld1 TURKEY0))
     (set! PLAYER2 (player iworld2 TURKEY1))
@@ -478,6 +594,49 @@ waiting list.
        (check-equal? (advance-game COUNTDOWN4) PLAYING0)
        (check-equal? (advance-game PLAYING0) PLAYING3)
        (check-equal? (advance-game PLAYING4) WAITING2))
+
+     (λ ()
+       (check-equal? (eat* '() '()) '())
+       (check-equal? (eat* (list TURKEY1 TURKEY2) '()) (list TURKEY1 TURKEY2))
+       (check-equal? (eat* '() (list (posn 100 5) (posn 0 0))) '())
+       (check-equal? (eat* (list TURKEY1 TURKEY2)
+                           (list (posn 100 100) (posn 30 100)
+                                 (posn 50 75) (posn 0 0)))
+                     (list TURKEY1
+                           TURKEY2.1))
+       (check-equal? (eat* (list (struct-copy turkey TURKEY1) TURKEY1)
+                           (list (posn 45 50)))
+                     (list TURKEY1.2 TURKEY1)))
+     
+
+     (λ ()
+       (check-equal? (turkey-eat TURKEY1 '()) TURKEY1)
+       (check-equal? (turkey-eat TURKEY2
+                                 (list (posn 3 4) (posn 30 100) (posn 4 3)))
+                     TURKEY2.1))
+
+     (λ ()
+       (check-equal? (eat-food-if-close TURKEY2 (posn 2 1000)) TURKEY2)
+       (check-equal? (eat-food-if-close TURKEY2 (posn 30 101)) TURKEY2.1))
+     
+     (λ ()
+       (check-equal? (was-eaten/single-turkey TURKEY1 '()) '())
+       (check-equal? (was-eaten/single-turkey
+                      TURKEY0
+                      (list (posn 9 8) (posn 0 0) (posn 11 12)))
+                     (list (posn 0 0))))
+     
+     (λ ()
+       (check-equal? (was-eaten* '() '()) '())
+       (check-equal? (was-eaten* '() (list (posn 50 10) (posn 0 0)))
+                     (list (posn 50 10) (posn 0 0)))
+       (check-equal? (was-eaten* (list TURKEY1 TURKEY2)
+                                 (list (posn 45 50) (posn 0 0) (posn 30 102)))
+                     (list (posn 0 0))))
+
+     (λ ()
+       (check-true (turkey-eat-food? TURKEY1 (posn 45 50)))
+       (check-false (turkey-eat-food? TURKEY2 (posn 100 200))))
 
      (λ ()
        (check-equal? (update-waypoint! PLAYING1 iworld1 '(here is some garbage))
