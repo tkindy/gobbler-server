@@ -77,7 +77,7 @@ waiting list.
 (struct countdown ready [] #:transparent)
 (struct playing ready [] #:transparent)
 
-;; A Turkey is a (turkey posn? N posn?)
+;; A Turkey is a (turkey posn? N [Maybe posn?])
 ;; - represents a playable turkey
 
 ;; A Player is a (make-player iworld? turkey?)
@@ -330,7 +330,7 @@ waiting list.
 (define (fatten-first-turkey all-turkeys afood)
   (cond [(empty? all-turkeys) '()]
         [else
-         (if (turkey-eat-food? (first all-turkeys) afood)
+         (if (turkey-eat-food? (player-turkey (first all-turkeys)) afood)
              (cons (fatten-player (first all-turkeys)) (rest all-turkeys))
              (cons (first all-turkeys) (fatten-first-turkey (rest all-turkeys) afood)))]))
 
@@ -347,10 +347,10 @@ waiting list.
           (add1 (turkey-food-eaten turkey))
           (turkey-waypoint turkey)))
 
-;; was-eaten? : [List-of Turkey] Food -> Boolean
-;; Was the given food eaten by any turkey?
-(define (was-eaten? all-turkeys afood)
-  (ormap (λ (t) (turkey-eat-food? t afood)) all-turkeys))
+;; was-eaten? : [Listof player?] Food -> Boolean
+;; Was the given food eaten by any player?
+(define (was-eaten? all-players afood)
+  (ormap (λ (p) (turkey-eat-food? (player-turkey p) afood)) all-players))
 
 ;; [Listof player?] -> [Listof player?]
 ;; Move all the players' turkeys towards their goal
@@ -359,18 +359,18 @@ waiting list.
 
 ;; player? -> player?
 ;; Move a single player's turkey towards its goal if it exists
-(define (move-player player)
-  (player (player-iworld player)
-          (move-turkey (player-turkey player))))
+(define (move-player aplayer)
+  (player (player-iworld aplayer)
+          (move-turkey (player-turkey aplayer))))
 
 ;; turkey? -> turkey?
 ;; Move the turkey towards its goal
-(define (move-turkey turkey)
-  (turkey (translate-loc (turkey-loc turkey) (turkey-waypoint turkey) 10)
-          (turkey-food-eaten turkey)
-          (turkey-waypoint turkey)))
+(define (move-turkey aturkey)
+  (turkey (translate-loc (turkey-loc aturkey) (turkey-waypoint aturkey) 10)
+          (turkey-food-eaten aturkey)
+          (turkey-waypoint aturkey)))
 
-;; [Maybe posn?] posn? N -> posn?
+;; posn? [Maybe posn?] N -> posn?
 ;; translate the given Posn (if any) toward the goal
 (define (translate-loc loc goal close)
   (cond
@@ -531,11 +531,17 @@ waiting list.
 
   (define POSN0      null)
   (define POSN1      null)
+  (define POSN2      null)
+  (define POSN3      null)
+  (define POSN3.1    null)
+  (define POSN4      null)
+  (define POSN5      null)
+  (define POSN6      null)
   (define TURKEY0    null)
+  (define TURKEY0.1  null)
   (define TURKEY1    null)
-  (define TURKEY2    null)
   (define TURKEY1.1  null)
-  (define TURKEY1.2  null)
+  (define TURKEY2    null)
   (define TURKEY2.1  null)
   (define PLAYER1    null)
   (define PLAYER2    null)
@@ -558,22 +564,31 @@ waiting list.
 
   ;; Initialize all the test data
   (define (fixture)
-    (set! POSN0 (posn 40 40))
-    (set! POSN1 (posn 100 30))
+    (set! POSN0   (posn 40 40))
+    (set! POSN1   (posn 100 30))
+    (set! POSN2   (posn 10 10))
+    (set! POSN3   (posn 50 30))
+    (set! POSN3.1 (posn 30 20))
+    (set! POSN4   (posn 45 50))
+    (set! POSN5   (posn 30 100))
+    (set! POSN6   (posn 50 50))
 
-    (set! TURKEY0 (turkey (posn 10 10)  1 (posn 50 30)))
-    (set! TURKEY1 (turkey (posn 45 50)  0 (posn 45 50)))
-    (set! TURKEY2 (turkey (posn 30 100) 0 (posn 50 50)))
+    (set! TURKEY0   (turkey POSN2 1 POSN3))
+    (set! TURKEY0.1 (turkey POSN2 1 POSN3.1))
+    
+    (set! TURKEY1   (turkey POSN4 0 POSN4))
+    (set! TURKEY1.1 (turkey POSN4 1 POSN4))
+    
+    (set! TURKEY2   (turkey POSN5 0 POSN6))
+    (set! TURKEY2.1 (turkey POSN5 1 POSN6))
 
-    (set! TURKEY1.1 (turkey (posn 10 10) 1 (posn 30 20)))
-    (set! TURKEY1.2 (turkey (posn 45 50) 1 (posn 45 50)))
-    (set! TURKEY2.1 (turkey (posn 30 100) 1 (posn 50 50)))
-
-    (set! PLAYER1 (player iworld1 TURKEY0))
-    (set! PLAYER2 (player iworld2 TURKEY1))
-    (set! PLAYER3 (player iworld3 TURKEY2))
-
-    (set! PLAYER1.1 (player iworld1 TURKEY1.1))
+    (set! PLAYER1   (player iworld1 TURKEY0))
+    (set! PLAYER1.1 (player iworld1 TURKEY0.1))
+    
+    (set! PLAYER2   (player iworld2 TURKEY1))
+    #;(set! PLAYER2.1 (player iworld2 TURKEY1.1))
+    
+    (set! PLAYER3   (player iworld3 TURKEY2))
 
     (set! WAITING0   (waiting '()))
     (set! WAITING1   (waiting `(,iworld1)))
@@ -587,7 +602,7 @@ waiting list.
     (set! COUNTDOWN3 (countdown '() `(,PLAYER1 ,PLAYER2)
                                 `(,POSN0 ,POSN1) (- COUNTDOWN-TICKS 1)))
     (set! COUNTDOWN4 (countdown '() `(,PLAYER1 ,PLAYER2)
-                                `(,POSN0 ,POSN1) 1))
+                                `(,POSN0 ,POSN1) 0))
     (set! PLAYING0   (playing '() `(,PLAYER1 ,PLAYER2) `(,POSN0 ,POSN1)
                               GAME-TICKS))
     (set! PLAYING1   (playing `(,iworld3) `(,PLAYER1 ,PLAYER2)
@@ -665,7 +680,7 @@ waiting list.
                            TURKEY2.1))
        (check-equal? (eat* (list (struct-copy turkey TURKEY1) TURKEY1)
                            (list (posn 45 50)))
-                     (list TURKEY1.2 TURKEY1)))
+                     (list TURKEY1.1 TURKEY1)))
 
 
      (λ ()
