@@ -160,8 +160,8 @@ waiting list.
 ;; A GameOverMessage is a (list 'game-over OutcomeMessage)
 ;; Represents information on the outcome of the game
 
-;; An OutcomeMessage is a string?
-;; Represents the name of the winner of the game
+;; An OutcomeMessage is a (Listof string?)
+;; Represents the names of the winners of the game
 
 ;; A TurkeyMessage is a (list N N N)
 ;; Represents the location of a turkey where:
@@ -196,6 +196,7 @@ waiting list.
 (define TICKS-PER-SECOND 28)
 (define COUNTDOWN-TICKS (seconds->ticks 3))
 (define GAME-TICKS (seconds->ticks 60))
+(define MIN-PLAYERS 4)
 
 (define INITIAL-STATE (waiting '()))
 
@@ -219,24 +220,25 @@ waiting list.
 
 ;; GobblerUniverse iworld? -> GobblerUniverse
 ;; Queue the new player
+;; TODO start game if enough players are present
 (define (queue-world! uni world)
-  (define new-queue (cons world (game-queue uni)))
+  (define new-queue (append (game-queue uni)
+                            (list world)))
   (set-game-queue! uni new-queue)
   uni)
 
-;; GobblerUniverse iworld? -> GobblerBundle
+;; GobblerUniverse iworld? -> GobblerUniverse
 ;; Remove player from the game
 (define (drop-world! uni world)
   (set-game-queue! uni (drop-queued (game-queue uni) world))
   (when (ready? uni)
     (set-ready-players! uni (drop-player (ready-players uni) world)))
-
   uni)
 
 ;; [Listof iworld?] iworld? -> [Listof iworld?]
 ;; Drop the iworld from the game queue
 (define (drop-queued queue world)
-  (remove world queue))
+  (remove world queue iworld=?))
 
 ;; [Listof player?] iworld? -> [Listof player?]
 ;; Drop the player with the iworld from the game
@@ -250,12 +252,12 @@ waiting list.
 (define (advance-game uni)
   (cond
     [(waiting? uni) uni]
-    [(countdown? uni) (advance-countdown uni)]
+    [(countdown? uni) (advance-countdown! uni)]
     [else (advance-playing uni)]))
 
 ;; countdown? -> GobblerUniverse
 ;; Advance the countdown state
-(define (advance-countdown uni)
+(define (advance-countdown! uni)
   (if (<= (ready-time-left uni) 0)
       (playing (game-queue uni)
                (ready-players uni)
@@ -269,35 +271,47 @@ waiting list.
 ;; Move all the turkeys toward their goal and update the time left
 (define (advance-playing game)
   (if (<= (ready-time-left game) 0)
-      (make-bundle (waiting (append (game-queue game)
-                                    (ready-players game)))
-                   (game-over-mails game)
-                   '())
+      (let ([player-worlds (map player-iworld (ready-players game))])
+        (make-bundle (waiting (append (game-queue game)
+                                      player-worlds))
+                     (game-over-mails game)
+                     '()))
       (next-playing-state game)))
 
 ;; playing? -> [Listof mail?]
 ;; Produce the mails to send to the players after the game is over
 (define (game-over-mails game)
-  (define winner (choose-winner (ready-players game)))
-  (define game-over-msg (list 'game-over winner))
-  (map (λ (player) (make-mail (player-iworld player)
-                              game-over-msg))))
+  (define winners (choose-winners (ready-players game)))
+  (define game-over-msg (list GAME-OVER winners))
+  (define player-worlds (map player-iworld (ready-players game)))
+  
+  (map (λ (world) (make-mail world game-over-msg))
+       (append (game-queue game) player-worlds)))
 
-;; [Listof player?] -> string?
-;; Pick the player who ate the most food. Assumes there is at least one
-;; player in the game
-(define (choose-winner players)
+;; [Listof player?] -> [Listof string?]
+;; Pick the player(s) who ate the most food
+(define (choose-winners players)
   ;; player? -> N
   ;; get the number of foods the player's turkey has eaten
   (define (num-foods p)
     (turkey-food-eaten (player-turkey p)))
-  (foldr (λ (p cur-winner)
-           (if (> (num-foods p)
-                  (num-foods cur-winner))
-               p
-               cur-winner))
-         (first players)
-         (rest players)))
+  ;; player? -> string?
+  ;; get the player's name
+  (define (name p)
+    (iworld-name (player-iworld p)))
+  (second
+   (foldr (λ (p acc)
+            (define foods (num-foods p))
+            (cond
+              [(> foods (first acc))
+               (list foods (list (name p)))]
+              [(= foods (first acc))
+               (list foods
+                     (cons (name p)
+                           (second acc)))]
+              [else acc]))
+          (list 0 '())
+          players)))
 
 
 ;; playing? -> GobblerBundle
@@ -366,7 +380,7 @@ waiting list.
 ;; turkey? -> turkey?
 ;; Move the turkey towards its goal
 (define (move-turkey aturkey)
-  (turkey (translate-loc (turkey-loc aturkey) (turkey-waypoint aturkey) 10)
+  (turkey (translate-loc (turkey-loc aturkey) (turkey-waypoint aturkey) TKY-STEP)
           (turkey-food-eaten aturkey)
           (turkey-waypoint aturkey)))
 
@@ -391,11 +405,11 @@ waiting list.
 ;; Turkey [Listof Posn] -> Turkey
 ;; Fatten the turkey if it ate any food
 (define (turkey-eat aturkey all-food)
-  (foldr (λ (afood sofar) (eat-food-if-close sofar afood)) aturkey all-food))
+  (foldr (λ (afood sofar) (eat-food-if-close! sofar afood)) aturkey all-food))
 
 ;; Turkey Posn -> Turkey
 ;; Increase the size of a turkey if it is close to some food
-(define (eat-food-if-close aturkey afood)
+(define (eat-food-if-close! aturkey afood)
   (when (turkey-eat-food? aturkey afood)
     (set-turkey-food-eaten! aturkey (add1 (turkey-food-eaten aturkey))))
   aturkey)
@@ -532,6 +546,7 @@ waiting list.
   (define POSN0      null)
   (define POSN1      null)
   (define POSN2      null)
+  (define POSN2.1    null)
   (define POSN3      null)
   (define POSN3.1    null)
   (define POSN4      null)
@@ -539,14 +554,16 @@ waiting list.
   (define POSN6      null)
   (define TURKEY0    null)
   (define TURKEY0.1  null)
+  (define TURKEY0.2  null)
   (define TURKEY1    null)
   (define TURKEY1.1  null)
   (define TURKEY2    null)
   (define TURKEY2.1  null)
   (define PLAYER1    null)
+  (define PLAYER1.1  null)
+  (define PLAYER1.2  null)
   (define PLAYER2    null)
   (define PLAYER3    null)
-  (define PLAYER1.1  null)
   (define WAITING0   null)
   (define WAITING1   null)
   (define WAITING2   null)
@@ -556,17 +573,19 @@ waiting list.
   (define COUNTDOWN3 null)
   (define COUNTDOWN4 null)
   (define PLAYING0   null)
+  (define PLAYING0.1 null)
   (define PLAYING1   null)
   (define PLAYING1.1 null)
   (define PLAYING2   null)
   (define PLAYING3   null)
-  (define PLAYING4   null)
+  (define BUNDLE0    null)
 
   ;; Initialize all the test data
   (define (fixture)
     (set! POSN0   (posn 40 40))
     (set! POSN1   (posn 100 30))
-    (set! POSN2   (posn 10 10))
+    (set! POSN2   (posn 20 70))
+    (set! POSN2.1 (posn 26 62))
     (set! POSN3   (posn 50 30))
     (set! POSN3.1 (posn 30 20))
     (set! POSN4   (posn 45 50))
@@ -575,6 +594,7 @@ waiting list.
 
     (set! TURKEY0   (turkey POSN2 1 POSN3))
     (set! TURKEY0.1 (turkey POSN2 1 POSN3.1))
+    (set! TURKEY0.2 (turkey POSN2.1 1 POSN3))
     
     (set! TURKEY1   (turkey POSN4 0 POSN4))
     (set! TURKEY1.1 (turkey POSN4 1 POSN4))
@@ -584,9 +604,9 @@ waiting list.
 
     (set! PLAYER1   (player iworld1 TURKEY0))
     (set! PLAYER1.1 (player iworld1 TURKEY0.1))
+    (set! PLAYER1.2 (player iworld1 TURKEY0.2))
     
     (set! PLAYER2   (player iworld2 TURKEY1))
-    #;(set! PLAYER2.1 (player iworld2 TURKEY1.1))
     
     (set! PLAYER3   (player iworld3 TURKEY2))
 
@@ -605,6 +625,8 @@ waiting list.
                                 `(,POSN0 ,POSN1) 0))
     (set! PLAYING0   (playing '() `(,PLAYER1 ,PLAYER2) `(,POSN0 ,POSN1)
                               GAME-TICKS))
+    (set! PLAYING0.1 (playing '() `(,PLAYER1.2 ,PLAYER2) `(,POSN0 ,POSN1)
+                              (- GAME-TICKS 1)))
     (set! PLAYING1   (playing `(,iworld3) `(,PLAYER1 ,PLAYER2)
                               `(,POSN0 ,POSN1) GAME-TICKS))
     (set! PLAYING1.1 (playing `(,iworld3) `(,PLAYER1.1 ,PLAYER2)
@@ -612,9 +634,13 @@ waiting list.
     (set! PLAYING2   (playing `(,iworld3) `(,PLAYER2) `(,POSN0 ,POSN1)
                               GAME-TICKS))
     (set! PLAYING3   (playing '() `(,PLAYER1 ,PLAYER2) `(,POSN0 ,POSN1)
-                              (- GAME-TICKS 1)))
-    (set! PLAYING4   (playing '() `(,PLAYER1 ,PLAYER2) `(,POSN0 ,POSN1)
-                              1)))
+                              0))
+
+    (set! BUNDLE0    (make-bundle
+                      WAITING2
+                      (list (make-mail iworld1 `(,GAME-OVER ("iworld1")))
+                            (make-mail iworld2 `(,GAME-OVER ("iworld1"))))
+                      '())))
 
   ;; [A] [Listof (-> A)] -> String
   ;; Run all the given tests
@@ -666,8 +692,8 @@ waiting list.
        (check-equal? (advance-game WAITING1) WAITING1)
        (check-equal? (advance-game COUNTDOWN0) COUNTDOWN3)
        (check-equal? (advance-game COUNTDOWN4) PLAYING0)
-       (check-equal? (advance-game PLAYING0) PLAYING3)
-       (check-equal? (advance-game PLAYING4) WAITING2))
+       (check-equal? (advance-game PLAYING0) PLAYING0.1)
+       (check-equal? (advance-game PLAYING3) BUNDLE0))
 
      (λ ()
        (check-equal? (eat* '() '()) '())
@@ -690,14 +716,14 @@ waiting list.
                      TURKEY2.1))
 
      (λ ()
-       (check-equal? (eat-food-if-close TURKEY2 (posn 2 1000)) TURKEY2)
-       (check-equal? (eat-food-if-close TURKEY2 (posn 30 101)) TURKEY2.1))
+       (check-equal? (eat-food-if-close! TURKEY2 (posn 2 1000)) TURKEY2)
+       (check-equal? (eat-food-if-close! TURKEY2 (posn 30 101)) TURKEY2.1))
 
      (λ ()
        (check-equal? (was-eaten/single-turkey TURKEY1 '()) '())
        (check-equal? (was-eaten/single-turkey
                       TURKEY0
-                      (list (posn 9 8) (posn 0 0) (posn 11 12)))
+                      (list (posn 18 72) (posn 0 0) (posn 21 74)))
                      (list (posn 0 0))))
 
      (λ ()
