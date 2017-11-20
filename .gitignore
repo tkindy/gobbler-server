@@ -3,3 +3,5 @@
 compiled/
 *.rkt~
 \#*.rkt#[0-9]#
+*.bak
+
