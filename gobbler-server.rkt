@@ -196,7 +196,8 @@ waiting list.
 (define TICKS-PER-SECOND 28)
 (define COUNTDOWN-TICKS (seconds->ticks 3))
 (define GAME-TICKS (seconds->ticks 60))
-(define MIN-PLAYERS 4)
+(define MIN-PLAYERS 2)
+(define MAX-FOODS 2)
 
 (define INITIAL-STATE (waiting '()))
 
@@ -220,12 +221,40 @@ waiting list.
 
 ;; GobblerUniverse iworld? -> GobblerUniverse
 ;; Queue the new player
-;; TODO start game if enough players are present
 (define (queue-world! uni world)
   (define new-queue (append (game-queue uni)
                             (list world)))
-  (set-game-queue! uni new-queue)
-  uni)
+  
+  (if (and (waiting? uni) (>= (length new-queue) MIN-PLAYERS))
+      (let* ([dequeued (take new-queue MIN-PLAYERS)]
+             [players (map new-player dequeued)])
+        (countdown (list-tail new-queue MIN-PLAYERS)
+                   players
+                   (generate-food)
+                   GAME-TICKS))
+      (begin
+        (set-game-queue! uni new-queue)
+        uni)))
+
+;; iworld? -> player?
+;; Create a new player at a random location
+(define (new-player w)
+  ;; -> turkey?
+  ;; Create a new turkey at a random location
+  (define (new-turkey)
+    (turkey (random-posn) 0 #f))
+  (player w (new-turkey)))
+
+;; -> [Listof posn?]
+;; Generate a random list of food for the start of the game
+(define (generate-food)
+  (map (λ (n) (random-posn)) (range MAX-FOODS)))
+
+;; -> posn?
+;; Create a new posn at a random location
+(define (random-posn)
+  (posn (random GAME-SIZE)
+        (random GAME-SIZE)))
 
 ;; GobblerUniverse iworld? -> GobblerUniverse
 ;; Remove player from the game
@@ -446,7 +475,7 @@ waiting list.
   (define waypoint (waypoint-message->posn waypoint-msg))
   (define player (get-player playing world))
 
-  (when (and (waypoint-reachable? waypoint) player)
+  (when (and (on-screen? waypoint) player)
     (set-turkey-waypoint! (player-turkey player) waypoint))
   playing)
 
@@ -482,9 +511,15 @@ waiting list.
 
 ;; Posn -> Boolean
 ;; Determines if the waypoint is valid
-(define (waypoint-reachable? posn)
-  (and (<= 0 (posn-x posn) GAME-SIZE)
-       (<= 0 (posn-y posn) GAME-SIZE)))
+(define (on-screen? posn)
+  (and (in-range? (posn-x posn) 0 GAME-SIZE)
+       (in-range? (posn-y posn) 0 GAME-SIZE)))
+
+;; number? number? number? -> boolean?
+;; Determine if n is between min (inclusive) and max (exclusive)
+(define (in-range? n min max)
+  (and (>= n min)
+       (< n max)))
 
 ;; Posn Posn Number -> Posn
 ;; compute a Posn that is by delta closer to q than p
@@ -792,11 +827,12 @@ waiting list.
        (check-equal? (waypoint-message->posn '(waypoint -10 10)) (posn -10 10)))
 
      (λ ()
-       (check-true (waypoint-reachable? (posn 0 0)))
-       (check-true (waypoint-reachable? (posn GAME-SIZE GAME-SIZE)))
-       (check-false
-        (waypoint-reachable? (posn (add1 GAME-SIZE) (add1 GAME-SIZE))))
-       (check-false (waypoint-reachable? (posn -1 -1))))
+       (check-true (on-screen? (posn 0 0)))
+       (check-true (on-screen? (posn (sub1 GAME-SIZE)
+                                     (sub1 GAME-SIZE))))
+       (check-false (on-screen? (posn GAME-SIZE
+                                      GAME-SIZE)))
+       (check-false (on-screen? (posn -1 -1))))
 
      (λ ()
        (check-true (close? (move-toward (posn 12 5) (posn 24 10) 13)
@@ -835,6 +871,9 @@ waiting list.
        (check-equal? (posn- (posn 3 2) (posn 3 8)) (posn 0 -6)))
 
      (λ ()
-       (check-equal? (posn+ (posn 3 2) (posn 3 8)) (posn 6 10)))))
+       (check-equal? (posn+ (posn 3 2) (posn 3 8)) (posn 6 10)))
+
+     (λ ()
+       (check-true (andmap on-screen? (generate-food))))))
 
   (run-tests tests))
