@@ -131,29 +131,29 @@ waiting list.
 
 (define COUNTDOWN 'countdown)
 ;; A CountdownMessage is a (list 'countdown
-;;                               [Listof TurkeyMessage]
+;;                               [Listof PlayerMessage]
 ;;                               [Listof FoodMessage]
 ;;                               N
-;;                               [Maybe TurkeyMessage]
+;;                               [Maybe PlayerMessage]
 ;; Represents information on a pre-game countdown where:
-;; - the [Listof TurkeyMessage] is the other turkeys that are about to play
+;; - the [Listof PlayerMessage] is the other turkeys that are about to play
 ;;   the game
 ;; - the [Listof FoodMessage] is the locations of the foods on the board
 ;; - the N is the amount of time left before the game begins
-;; - the [Maybe TurkeyMessage] is the receiving player's turkey, or false if
+;; - the [Maybe PlayerMessage] is the receiving player's turkey, or false if
 ;;   they are observing
 
 (define PLAYING 'playing)
 ;; A PlayingMessage is a (list 'playing
-;;                             [Listof TurkeyMessage]
+;;                             [Listof PlayerMessage]
 ;;                             [Listof FoodMessage]
 ;;                             N
-;;                             [Maybe TurkeyMessage]
+;;                             [Maybe PlayerMessage]
 ;; Represents information on an in-progress game where:
-;; - the [Listof TurkeyMessage] is other turkeys currently playing
+;; - the [Listof PlayerMessage] is other turkeys currently playing
 ;; - the [Listof FoodMessage] is the locations of the foods on the board
 ;; - the N is the amount of time left before the game ends
-;; - the [Maybe TurkeyMessage] is the receiving player's turkey, or false if
+;; - the [Maybe PlayerMessage] is the receiving player's turkey, or false if
 ;;   they are observing
 
 (define GAME-OVER 'game-over)
@@ -163,11 +163,12 @@ waiting list.
 ;; An OutcomeMessage is a (Listof string?)
 ;; Represents the names of the winners of the game
 
-;; A TurkeyMessage is a (list N N N)
-;; Represents the location of a turkey where:
-;; - the first number is its x coordinate
-;; - the second number is its y coordinate
-;; - the third number is the number of foods it has eaten
+;; A PlayerMessage is a (list string? N N N)
+;; Represents the location of a player where:
+;; - the string is the player's name
+;; - the first number is their turkey's x coordinate
+;; - the second number is their turkey's y coordinate
+;; - the third number is the number of foods their turkey has eaten
 
 ;; A FoodMessage is a (list N N)
 ;; Represents the location of a food where:
@@ -196,7 +197,7 @@ waiting list.
 (define TICKS-PER-SECOND 28)
 (define COUNTDOWN-TICKS (seconds->ticks 3))
 (define GAME-TICKS (seconds->ticks 60))
-(define MIN-PLAYERS 2)
+(define NUM-PLAYERS 2)
 (define MAX-FOODS 2)
 
 (define INITIAL-STATE (waiting '()))
@@ -225,13 +226,13 @@ waiting list.
   (define new-queue (append (game-queue uni)
                             (list world)))
   
-  (if (and (waiting? uni) (>= (length new-queue) MIN-PLAYERS))
-      (let* ([dequeued (take new-queue MIN-PLAYERS)]
+  (if (and (waiting? uni) (>= (length new-queue) NUM-PLAYERS))
+      (let* ([dequeued (take new-queue NUM-PLAYERS)]
              [players (map new-player dequeued)])
-        (countdown (list-tail new-queue MIN-PLAYERS)
+        (countdown (list-tail new-queue NUM-PLAYERS)
                    players
                    (generate-food)
-                   GAME-TICKS))
+                   COUNTDOWN-TICKS))
       (begin
         (set-game-queue! uni new-queue)
         uni)))
@@ -280,22 +281,82 @@ waiting list.
 ;; Advance the state of the universe
 (define (advance-game uni)
   (cond
-    [(waiting? uni) uni]
+    [(waiting? uni) (advance-waiting uni)]
     [(countdown? uni) (advance-countdown! uni)]
     [else (advance-playing uni)]))
 
-;; countdown? -> GobblerUniverse
+;; waiting? -> GobblerBundle
+;; Advance the waiting state
+(define (advance-waiting uni)
+  (define waiting-msg (list 'waiting
+                            (length (game-queue uni))
+                            NUM-PLAYERS))
+  (define mail (map (λ (w) (make-mail w waiting-msg))
+                    (game-queue uni)))
+  (make-bundle uni mail '()))
+
+;; countdown? -> GobblerBundle
 ;; Advance the countdown state
 (define (advance-countdown! uni)
-  (if (<= (ready-time-left uni) 0)
-      (playing (game-queue uni)
-               (ready-players uni)
-               (ready-foods uni)
-               GAME-TICKS)
-      (begin
-        (set-ready-time-left! uni (sub1 (ready-time-left uni)))
-        uni)))
+  (define new-uni
+    (if (<= (ready-time-left uni) 0)
+        (playing (game-queue uni)
+                 (ready-players uni)
+                 (ready-foods uni)
+                 GAME-TICKS)
+        (begin
+          (set-ready-time-left! uni (sub1 (ready-time-left uni)))
+          uni)))
 
+  (ready-bundle new-uni))
+
+;; ready? -> (U CountdownMessage PlayingMessage)
+;; Build the bundle for the given ready universe
+(define (ready-bundle uni)
+  (define queue-mail (ready-queue-mail uni))
+  (define player-mail (ready-player-mail uni))
+
+  (make-bundle uni
+               (append queue-mail player-mail)
+               '()))
+
+;; ready? -> [Listof Outgoing]
+;; Build the mail for the users in the queue
+(define (ready-queue-mail uni)
+  (map (λ (world) (make-mail world (ready-msg uni #f)))
+       (game-queue uni)))
+
+;; ready? -> [Listof Outgoing]
+;; Build the mail for the players in the game
+(define (ready-player-mail uni)
+  (map (λ (p) (make-mail (player-iworld p) (ready-msg uni p)))
+       (ready-players uni)))
+
+;; ready? [Maybe player?] -> (U CountdownMessage PlayingMessage)
+;; Build a ready message for the given player
+(define (ready-msg uni player)
+  (define msg-type (if (countdown? uni) 'countdown 'playing))
+  (list msg-type
+        (map player-msg (ready-players uni))
+        (map food-msg (ready-foods uni))
+        (ready-time-left uni)
+        (if (boolean? player) #f (player-msg player))))
+
+;; player? -> PlayerMessage
+;; Build a player message
+(define (player-msg p)
+  (define turkey (player-turkey p))
+  (define loc (turkey-loc turkey))
+  (list (iworld-name (player-iworld p))
+        (posn-x loc)
+        (posn-y loc)
+        (turkey-food-eaten turkey)))
+
+;; posn? -> FoodMessage
+;; Build a food message
+(define (food-msg f)
+  (list (posn-x f) (posn-y f)))
+    
 ;; playing? -> GobblerBundle
 ;; Move all the turkeys toward their goal and update the time left
 (define (advance-playing game)
@@ -350,11 +411,14 @@ waiting list.
     (update-turkeys-and-food
      (ready-players game)
      (ready-foods game)))
-  (playing
-   (game-queue game)
-   (move-all-players (first new-data))
-   (second new-data)
-   (sub1 (ready-time-left game))))
+  (define new-uni
+    (playing
+     (game-queue game)
+     (move-all-players (first new-data))
+     (second new-data)
+     (sub1 (ready-time-left game))))
+
+  (ready-bundle new-uni))
 
 ;; [Listof player?] [Listof posn?] -> (list [Listof player?] [Listof posn?])
 ;; Fatten turkeys who ate food and remove the food they ate
@@ -364,7 +428,8 @@ waiting list.
   ;; and remove it if it is eaten)
   (define (update-turkeys-with-food afood sofar)
     (list (fatten-first-turkey (first sofar) afood)
-          (if (was-eaten? (first sofar) afood) (second sofar)
+          (if (was-eaten? (first sofar) afood)
+              (second sofar)
               (cons afood (second sofar)))))
   (foldr update-turkeys-with-food (list lot '()) lof))
 
@@ -614,6 +679,11 @@ waiting list.
   (define PLAYING2   null)
   (define PLAYING3   null)
   (define BUNDLE0    null)
+  (define BUNDLE1    null)
+  (define BUNDLE2    null)
+  (define BUNDLE3    null)
+  (define BUNDLE4    null)
+  (define BUNDLE5    null)
 
   ;; Initialize all the test data
   (define (fixture)
@@ -675,7 +745,42 @@ waiting list.
                       WAITING2
                       (list (make-mail iworld1 `(,GAME-OVER ("iworld1")))
                             (make-mail iworld2 `(,GAME-OVER ("iworld1"))))
-                      '())))
+                      '()))
+    (set! BUNDLE1    (make-bundle WAITING0 '() '()))
+    (set! BUNDLE2    (make-bundle WAITING1 (list (make-mail iworld1 '(waiting 1 2))) '()))
+
+    (define player-msg0   '("iworld1" 20 70 1))
+    (define player-msg0.1 '("iworld1" 26 62 1))
+    (define player-msg1   '("iworld2" 45 50 0))
+
+    (define players0   (list player-msg0 player-msg1))
+    (define players0.1 (list player-msg0.1 player-msg1))
+
+    (define foods0 '((40 40) (100 30)))
+    
+    (define msg-core '((("iworld1" 20 70 1)
+                        ("iworld2" 45 50 0))
+                       ((40 40) (100 30))))
+
+    (define msg0 (list 'countdown players0 foods0 83 player-msg0))
+    (define msg1 (list 'countdown players0 foods0 83 player-msg1))
+    (define msg2 (list 'playing players0 foods0 1680 player-msg0))
+    (define msg3 (list 'playing players0 foods0 1680 player-msg1))
+    (define msg4 (list 'playing players0.1 foods0 1679 player-msg0.1))
+    (define msg5 (list 'playing players0.1 foods0 1679 player-msg1))
+
+    (define (mails msg0 msg1)
+      (list
+       (make-mail iworld1 msg0)
+       (make-mail iworld2 msg1)))
+    
+    (define mails0 (mails msg0 msg1))
+    (define mails1 (mails msg2 msg3))
+    (define mails2 (mails msg4 msg5))
+    
+    (set! BUNDLE3 (make-bundle COUNTDOWN3 mails0 '()))
+    (set! BUNDLE4 (make-bundle PLAYING0 mails1 '()))
+    (set! BUNDLE5 (make-bundle PLAYING0.1 mails2 '())))
 
   ;; [A] [Listof (-> A)] -> String
   ;; Run all the given tests
@@ -702,6 +807,19 @@ waiting list.
        (check-equal? (queue-world! PLAYING0 iworld3) PLAYING1))
 
      (λ ()
+       (define result (queue-world! WAITING1 iworld2))
+       
+       (check-true   (countdown? result))
+       (check-equal? (length (game-queue result)) 0)
+       (check-equal? (length (ready-players result)) NUM-PLAYERS)
+       (check-equal? (length (ready-foods result)) MAX-FOODS)
+       (check-equal? (ready-time-left result) COUNTDOWN-TICKS)
+
+       (check-true (andmap (λ (p) (on-screen? (turkey-loc (player-turkey p))))
+                           (ready-players result)))
+       (check-true (andmap on-screen? (ready-foods result))))
+
+     (λ ()
        (check-equal? (drop-world! WAITING1 iworld1) WAITING0)
        (check-equal? (drop-world! COUNTDOWN1 iworld3) COUNTDOWN0)
        (check-equal? (drop-world! PLAYING1 iworld3) PLAYING0))
@@ -723,11 +841,11 @@ waiting list.
                      `(,PLAYER1 ,PLAYER3)))
 
      (λ ()
-       (check-equal? (advance-game WAITING0) WAITING0)
-       (check-equal? (advance-game WAITING1) WAITING1)
-       (check-equal? (advance-game COUNTDOWN0) COUNTDOWN3)
-       (check-equal? (advance-game COUNTDOWN4) PLAYING0)
-       (check-equal? (advance-game PLAYING0) PLAYING0.1)
+       (check-equal? (advance-game WAITING0) BUNDLE1)
+       (check-equal? (advance-game WAITING1) BUNDLE2)
+       (check-equal? (advance-game COUNTDOWN0) BUNDLE3)
+       (check-equal? (advance-game COUNTDOWN4) BUNDLE4)
+       (check-equal? (advance-game PLAYING0) BUNDLE5)
        (check-equal? (advance-game PLAYING3) BUNDLE0))
 
      (λ ()
