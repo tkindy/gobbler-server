@@ -421,7 +421,7 @@ waiting list.
   (ready-bundle new-uni))
 
 ;; [Listof player?] [Listof posn?] -> (list [Listof player?] [Listof posn?])
-;; Fatten turkeys who ate food and remove the food they ate
+;; Fatten turkeys who ate food, remove the food they ate, and generate new food
 (define (update-turkeys-and-food lot lof)
   ;; posn? (list [Listof player?] [Listof posn?]) -> (list [Listof player?] [Listof posn?])
   ;; Update the turkeys with the given food (fatten the first turkey to eat it
@@ -429,7 +429,7 @@ waiting list.
   (define (update-turkeys-with-food afood sofar)
     (list (fatten-first-turkey (first sofar) afood)
           (if (was-eaten? (first sofar) afood)
-              (second sofar)
+              (cons (random-posn) (second sofar))
               (cons afood (second sofar)))))
   (foldr update-turkeys-with-food (list lot '()) lof))
 
