@@ -2,6 +2,8 @@
 
 (require 2htdp/universe)
 
+;; This will run at dictionary.ccs.neu.edu:20000
+
 #|
 
 ==============
