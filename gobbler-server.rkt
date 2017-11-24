@@ -69,11 +69,11 @@ waiting list.
 ;; An Outgoing is a (make-mail iworld? Server2ClientMessage)
 ;; Represents a message that is to be sent to the iworld
 
-(struct turkey [loc food-eaten waypoint] #:mutable #:transparent)
+(struct turkey [loc food-eaten waypoint] #:transparent)
 (struct player [iworld turkey] #:transparent)
-(struct game [queue] #:transparent #:mutable)
+(struct game [queue] #:transparent)
 (struct waiting game [] #:transparent)
-(struct ready game [players foods time-left] #:transparent #:mutable)
+(struct ready game [players foods time-left] #:transparent)
 (struct countdown ready [] #:transparent)
 (struct playing ready [] #:transparent)
 
@@ -215,27 +215,37 @@ waiting list.
 (define (main the-port)
   (universe INITIAL-STATE
             [port the-port]
-            [on-new queue-world!]
-            [on-disconnect drop-world!]
+            [on-new queue-world]
+            [on-disconnect drop-world]
             [on-tick advance-game (/ TICKS-PER-SECOND)]
-            [on-msg update-waypoint!]))
+            [on-msg update-waypoint]))
 
 ;; GobblerUniverse iworld? -> GobblerUniverse
 ;; Queue the new player
-(define (queue-world! uni world)
+(define (queue-world uni world)
   (define new-queue (append (game-queue uni)
                             (list world)))
-  
-  (if (and (waiting? uni) (>= (length new-queue) NUM-PLAYERS))
-      (let* ([dequeued (take new-queue NUM-PLAYERS)]
-             [players (map new-player dequeued)])
-        (countdown (list-tail new-queue NUM-PLAYERS)
-                   players
-                   (generate-food)
-                   COUNTDOWN-TICKS))
-      (begin
-        (set-game-queue! uni new-queue)
-        uni)))
+
+  (cond
+    [(waiting? uni)
+     (if (>= (length new-queue) NUM-PLAYERS)
+         (let* ([dequeued (take new-queue NUM-PLAYERS)]
+                [players (map new-player dequeued)])
+           (countdown (list-tail new-queue NUM-PLAYERS)
+                      players
+                      (generate-food)
+                      COUNTDOWN-TICKS))
+         (waiting new-queue))]
+    [(countdown? uni)
+     (countdown new-queue
+                (ready-players uni)
+                (ready-foods uni)
+                (ready-time-left uni))]
+    [else
+     (playing new-queue
+              (ready-players uni)
+              (ready-foods uni)
+              (ready-time-left uni))]))
 
 ;; iworld? -> player?
 ;; Create a new player at a random location
@@ -259,11 +269,22 @@ waiting list.
 
 ;; GobblerUniverse iworld? -> GobblerUniverse
 ;; Remove player from the game
-(define (drop-world! uni world)
-  (set-game-queue! uni (drop-queued (game-queue uni) world))
-  (when (ready? uni)
-    (set-ready-players! uni (drop-player (ready-players uni) world)))
-  uni)
+(define (drop-world uni world)
+  ;; [Listof player?] -> 
+  (define (drop-player* players)
+    (drop-player players world))
+  (define new-queue (drop-queued (game-queue uni) world))
+
+  (cond
+    [(waiting? uni)   (waiting new-queue)]
+    [(countdown? uni) (countdown new-queue
+                                 (drop-player* (ready-players uni))
+                                 (ready-foods uni)
+                                 (ready-time-left uni))]
+    [(playing? uni)   (playing new-queue
+                               (drop-player* (ready-players uni))
+                               (ready-foods uni)
+                               (ready-time-left uni))]))
 
 ;; [Listof iworld?] iworld? -> [Listof iworld?]
 ;; Drop the iworld from the game queue
@@ -282,7 +303,7 @@ waiting list.
 (define (advance-game uni)
   (cond
     [(waiting? uni) (advance-waiting uni)]
-    [(countdown? uni) (advance-countdown! uni)]
+    [(countdown? uni) (advance-countdown uni)]
     [else (advance-playing uni)]))
 
 ;; waiting? -> GobblerBundle
@@ -297,17 +318,18 @@ waiting list.
 
 ;; countdown? -> GobblerBundle
 ;; Advance the countdown state
-(define (advance-countdown! uni)
+(define (advance-countdown uni)
   (define new-uni
     (if (<= (ready-time-left uni) 0)
         (playing (game-queue uni)
                  (ready-players uni)
                  (ready-foods uni)
                  GAME-TICKS)
-        (begin
-          (set-ready-time-left! uni (sub1 (ready-time-left uni)))
-          uni)))
-
+        (countdown (game-queue uni)
+                   (ready-players uni)
+                   (ready-foods uni)
+                   (sub1 (ready-time-left uni)))))
+  
   (ready-bundle new-uni))
 
 ;; ready? -> (U CountdownMessage PlayingMessage)
@@ -335,7 +357,7 @@ waiting list.
 ;; ready? [Maybe player?] -> (U CountdownMessage PlayingMessage)
 ;; Build a ready message for the given player
 (define (ready-msg uni player)
-  (define msg-type (if (countdown? uni) 'countdown 'playing))
+  (define msg-type (if (countdown? uni) COUNTDOWN PLAYING))
   (list msg-type
         (map player-msg (ready-players uni))
         (map food-msg (ready-foods uni))
@@ -499,14 +521,16 @@ waiting list.
 ;; Turkey [Listof Posn] -> Turkey
 ;; Fatten the turkey if it ate any food
 (define (turkey-eat aturkey all-food)
-  (foldr (λ (afood sofar) (eat-food-if-close! sofar afood)) aturkey all-food))
+  (foldr (λ (afood sofar) (eat-food-if-close sofar afood)) aturkey all-food))
 
 ;; Turkey Posn -> Turkey
 ;; Increase the size of a turkey if it is close to some food
-(define (eat-food-if-close! aturkey afood)
-  (when (turkey-eat-food? aturkey afood)
-    (set-turkey-food-eaten! aturkey (add1 (turkey-food-eaten aturkey))))
-  aturkey)
+(define (eat-food-if-close aturkey afood)
+  (if (turkey-eat-food? aturkey afood)
+      (turkey (turkey-loc aturkey)
+              (add1 (turkey-food-eaten aturkey))
+              (turkey-waypoint aturkey))
+      aturkey))
 
 ;; Turkey [Listof Posn] -> [Listof Posn]
 ;; Remove any food the turkey has eaten
@@ -529,20 +553,34 @@ waiting list.
 
 ;; GobblerUniverse iworld? sexp? -> GobblerBundle
 ;; Update the waypoint of the player
-(define (update-waypoint! uni world sexp)
-  (if (and (playing? uni) (waypoint-message? sexp))
-      (handle-waypoint! uni world sexp)
-      uni))
+(define (update-waypoint uni world sexp)
+  (cond
+    [(waiting? uni)   uni]
+    [(countdown? uni) uni]
+    [(playing? uni)
+     (if (waypoint-message? sexp)
+         (playing (game-queue uni)
+                  (update-waypoint/players (ready-players uni) world sexp)
+                  (ready-foods uni)
+                  (ready-time-left uni))
+         uni)]))
 
-;; Playing iworld? WaypointMessage -> GobblerBundle
+;; [Listof player?] iworld? WaypointMessage -> [Listof player?]
 ;; Update the waypoint of the player
-(define (handle-waypoint! playing world waypoint-msg)
+(define (update-waypoint/players players world waypoint-msg)
   (define waypoint (waypoint-message->posn waypoint-msg))
-  (define player (get-player playing world))
-
-  (when (and (on-screen? waypoint) player)
-    (set-turkey-waypoint! (player-turkey player) waypoint))
-  playing)
+  
+  (if (on-screen? waypoint)
+      (map (λ (p)
+             (if (iworld=? (player-iworld p) world)
+                 (let ([t (player-turkey p)])
+                   (player world
+                           (turkey (turkey-loc t)
+                                   (turkey-food-eaten t)
+                                   waypoint)))
+                 p))
+           players)
+      players))
 
 ;; =====================================
 ;; UTILS
@@ -802,12 +840,12 @@ waiting list.
      ;; SERVER TESTS
      ;; =====================================
      (λ ()
-       (check-equal? (queue-world! WAITING0 iworld1) WAITING1)
-       (check-equal? (queue-world! COUNTDOWN0 iworld3) COUNTDOWN1)
-       (check-equal? (queue-world! PLAYING0 iworld3) PLAYING1))
+       (check-equal? (queue-world WAITING0 iworld1) WAITING1)
+       (check-equal? (queue-world COUNTDOWN0 iworld3) COUNTDOWN1)
+       (check-equal? (queue-world PLAYING0 iworld3) PLAYING1))
 
      (λ ()
-       (define result (queue-world! WAITING1 iworld2))
+       (define result (queue-world WAITING1 iworld2))
        
        (check-true   (countdown? result))
        (check-equal? (length (game-queue result)) 0)
@@ -820,13 +858,13 @@ waiting list.
        (check-true (andmap on-screen? (ready-foods result))))
 
      (λ ()
-       (check-equal? (drop-world! WAITING1 iworld1) WAITING0)
-       (check-equal? (drop-world! COUNTDOWN1 iworld3) COUNTDOWN0)
-       (check-equal? (drop-world! PLAYING1 iworld3) PLAYING0))
+       (check-equal? (drop-world WAITING1 iworld1) WAITING0)
+       (check-equal? (drop-world COUNTDOWN1 iworld3) COUNTDOWN0)
+       (check-equal? (drop-world PLAYING1 iworld3) PLAYING0))
 
      (λ ()
-       (check-equal? (drop-world! COUNTDOWN1 iworld1) COUNTDOWN2)
-       (check-equal? (drop-world! PLAYING1 iworld1) PLAYING2))
+       (check-equal? (drop-world COUNTDOWN1 iworld1) COUNTDOWN2)
+       (check-equal? (drop-world PLAYING1 iworld1) PLAYING2))
 
      (λ ()
        (check-equal? (drop-queued '() iworld1) '())
@@ -869,8 +907,8 @@ waiting list.
                      TURKEY2.1))
 
      (λ ()
-       (check-equal? (eat-food-if-close! TURKEY2 (posn 2 1000)) TURKEY2)
-       (check-equal? (eat-food-if-close! TURKEY2 (posn 30 101)) TURKEY2.1))
+       (check-equal? (eat-food-if-close TURKEY2 (posn 2 1000)) TURKEY2)
+       (check-equal? (eat-food-if-close TURKEY2 (posn 30 101)) TURKEY2.1))
 
      (λ ()
        (check-equal? (was-eaten/single-turkey TURKEY1 '()) '())
@@ -892,26 +930,26 @@ waiting list.
        (check-false (turkey-eat-food? TURKEY2 (posn 100 200))))
 
      (λ ()
-       (check-equal? (update-waypoint! PLAYING1 iworld1 '(here is some garbage))
+       (check-equal? (update-waypoint PLAYING1 iworld1 '(here is some garbage))
                      PLAYING1)
-       (check-equal? (update-waypoint! PLAYING1 iworld1 2)
+       (check-equal? (update-waypoint PLAYING1 iworld1 2)
                      PLAYING1)
-       (check-equal? (update-waypoint! PLAYING1 iworld3 '(waypoint 30 20))
+       (check-equal? (update-waypoint PLAYING1 iworld3 '(waypoint 30 20))
                      PLAYING1)
-       (check-equal? (update-waypoint! WAITING1 iworld1 '(waypoint 30 20))
+       (check-equal? (update-waypoint WAITING1 iworld1 '(waypoint 30 20))
                      WAITING1)
-       (check-equal? (update-waypoint! PLAYING1 iworld1 '(waypoint -1000 -1000))
+       (check-equal? (update-waypoint PLAYING1 iworld1 '(waypoint -1000 -1000))
                      PLAYING1)
-       (check-equal? (update-waypoint! PLAYING1 iworld1 '(waypoint 30 20))
+       (check-equal? (update-waypoint PLAYING1 iworld1 '(waypoint 30 20))
                      PLAYING1.1))
 
      (λ ()
-       (check-equal? (update-waypoint! PLAYING1 iworld3 '(waypoint 30 20))
+       (check-equal? (update-waypoint PLAYING1 iworld3 '(waypoint 30 20))
                      PLAYING1)
-       (check-equal? (update-waypoint! PLAYING1 iworld1 '(waypoint -1000 -1000))
+       (check-equal? (update-waypoint PLAYING1 iworld1 '(waypoint -1000 -1000))
                      PLAYING1)
-       (check-equal? (handle-waypoint! PLAYING1 iworld1 '(waypoint 30 20))
-                     PLAYING1.1))
+       (check-equal? (update-waypoint/players `(,PLAYER1 ,PLAYER2) iworld1 '(waypoint 30 20))
+                     `(,PLAYER1.1 ,PLAYER2)))
 
      ;; =====================================
      ;; UTILS TESTS
