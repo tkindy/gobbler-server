@@ -288,7 +288,7 @@ waiting list.
 ;; [Listof player?] iworld? -> [Listof player?]
 ;; Drop the player with the iworld from the game
 (define (drop-player players world)
-  (filter (λ (player) (not (iworld=? world (player-iworld player))))
+  (filter (λ (p) (not (iworld=? world (player-iworld p))))
           players))
 
 ;; -----------------------------------------------------------------------------
@@ -365,23 +365,23 @@ waiting list.
 
 ;; ready? [Maybe player?] -> (U CountdownMessage PlayingMessage)
 ;; Build a ready message for the given player
-(define (ready-msg uni player)
+(define (ready-msg uni aplayer)
   (define msg-type (if (countdown? uni) COUNTDOWN PLAYING))
   (list msg-type
         (map player-msg (ready-players uni))
         (map food-msg (ready-foods uni))
         (ready-time-left uni)
-        (if (boolean? player) #f (player-msg player))))
+        (if (boolean? aplayer) #f (player-msg aplayer))))
 
 ;; player? -> PlayerMessage
 ;; Build a player message
 (define (player-msg p)
-  (define turkey (player-turkey p))
-  (define loc (turkey-loc turkey))
+  (define t (player-turkey p))
+  (define loc (turkey-loc t))
   (list (iworld-name (player-iworld p))
         (posn-x loc)
         (posn-y loc)
-        (turkey-food-eaten turkey)))
+        (turkey-food-eaten t)))
 
 ;; posn? -> FoodMessage
 ;; Build a food message
@@ -475,16 +475,16 @@ waiting list.
 
 ;; player? -> player?
 ;; Increase the size of the given player's turkey
-(define (fatten-player player)
-  (player (player-iworld player)
-          (fatten-turkey (player-turkey player))))
+(define (fatten-player aplayer)
+  (player (player-iworld aplayer)
+          (fatten-turkey (player-turkey aplayer))))
 
 ;; turkey? -> turkey?
 ;; Increase the size of the given turkey
-(define (fatten-turkey turkey)
-  (turkey (turkey-loc turkey)
-          (add1 (turkey-food-eaten turkey))
-          (turkey-waypoint turkey)))
+(define (fatten-turkey aturkey)
+  (turkey (turkey-loc aturkey)
+          (add1 (turkey-food-eaten aturkey))
+          (turkey-waypoint aturkey)))
 
 ;; was-eaten? : [Listof player?] Food -> Boolean
 ;; Was the given food eaten by any player?
