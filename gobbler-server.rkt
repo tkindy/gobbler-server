@@ -1,6 +1,6 @@
 #! /bin/sh
 #|
-exec racket -qu "$0" ${1+"$@"}
+exec racket -tm "$0" ${1+"$@"}
 |#
 #lang racket
 
@@ -229,6 +229,7 @@ waiting list.
   (define the-port (if (string? p) (string->number p) p))
   (unless (and (number? the-port) (number? GAME-TICKS))
     (error 'gobbler-server "start with ./gobbler-server port-number [game-ticks]"))
+  (printf "running gobbler-server on port ~a for ~a ticks\n" the-port GAME-TICKS)
   (void
     (universe INITIAL-STATE
       [port the-port]
