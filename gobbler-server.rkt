@@ -1,7 +1,13 @@
+#! /bin/sh
+#|
+exec racket -qu "$0" ${1+"$@"}
+|#
 #lang racket
 
 (provide
-  ;; PorNumber -> ???
+  ;; PorNumber [N] -> Void
+  ;; consumes the portnumber and optionally the number of game ticks 
+  ;; run as ./gobbler-server port-number [game-ticks]
   main)
 
 (require 2htdp/universe)
@@ -216,16 +222,20 @@ waiting list.
 ;; SERVER
 ;; =====================================
 
-;; number? -> GobblerUniverse
+;; Number -> GobblerUniverse
 ;; Run the server
-(define (main the-port (gt GAME-TICKS))
-  (set! GAME-TICKS gt)
-  (universe INITIAL-STATE
-            [port the-port]
-            [on-new queue-world]
-            [on-disconnect drop-world]
-            [on-tick advance-game (/ TICKS-PER-SECOND)]
-            [on-msg update-waypoint]))
+(define (main p (gt GAME-TICKS))
+  (set! GAME-TICKS (if (string? gt) (string->number gt) gt))
+  (define the-port (if (string? p) (string->number p) p))
+  (unless (and (number? the-port) (number? GAME-TICKS))
+    (error 'gobbler-server "start with ./gobbler-server port-number [game-ticks]"))
+  (void
+    (universe INITIAL-STATE
+      [port the-port]
+      [on-new queue-world]
+      [on-disconnect drop-world]
+      [on-tick advance-game (/ TICKS-PER-SECOND)]
+      [on-msg update-waypoint])))
 
 ;; GobblerUniverse iworld? -> GobblerUniverse
 ;; Queue the new player
