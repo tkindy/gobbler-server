@@ -218,7 +218,8 @@ waiting list.
 
 ;; number? -> GobblerUniverse
 ;; Run the server
-(define (main the-port)
+(define (main the-port (gt GAME-TICKS))
+  (set! GAME-TICKS gt)
   (universe INITIAL-STATE
             [port the-port]
             [on-new queue-world]
@@ -229,21 +230,11 @@ waiting list.
 ;; GobblerUniverse iworld? -> GobblerUniverse
 ;; Queue the new player
 (define (queue-world uni world)
-  (define new-queue (append (game-queue uni)
-                            (list world)))
-
+  (define nu-q (append (game-queue uni) (list world)))
   (cond
-    [(waiting? uni) (waiting new-queue)]
-    [(countdown? uni)
-     (countdown new-queue
-                (ready-players uni)
-                (ready-foods uni)
-                (ready-time-left uni))]
-    [else
-     (playing new-queue
-              (ready-players uni)
-              (ready-foods uni)
-              (ready-time-left uni))]))
+    [(waiting? uni) (waiting nu-q)]
+    [(countdown? uni) (countdown nu-q (ready-players uni) (ready-foods uni) (ready-time-left uni))]
+    [else (playing nu-q (ready-players uni) (ready-foods uni) (ready-time-left uni))]))
 
 ;; iworld? -> player?
 ;; Create a new player at a random location

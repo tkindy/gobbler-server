@@ -52,9 +52,9 @@
 (define WAYPOINT 'waypoint)
 ;; A Client2ServerMessage is a
 #;
- (list WAYPOINT
-       N  ;; the x coordinate
-       N) ;; the y coordinate 
+(list WAYPOINT
+      N  ;; the x coordinate
+      N) ;; the y coordinate 
 
 ;; ===================================================================================================
 (require 2htdp/image)
@@ -85,12 +85,25 @@
 (define (main where handle color)
   ;; this initial state temporarily breaks types "for free"
   (big-bang (list color "dummy message")
-    (to-draw render)
+    (to-draw    render)
     (on-receive incoming)
-    (on-mouse send-click)
-    (name handle)
-    (register where)
-    (port GOBBLER-PORT)))
+    (on-mouse   send-click)
+    (stop-when  game-over? render-over)
+    (name       handle)
+    (register   where)
+    (port       GOBBLER-PORT)))
+
+;; ---------------------------------------------------------------------------------------------------
+;; State -> Boolean
+;; did the player receive a 'game over' message?
+
+(check-expect (game-over? `("red" (,GAME-OVER "you won"))) #true)
+(check-expect (game-over? `("red" old)) #false)
+
+(define (game-over? s)
+  (match s
+    [`(,my-color (,(? (is? GAME-OVER)) ,x ...)) #true]
+    [_ #false]))
 
 ;; ---------------------------------------------------------------------------------------------------
 ;; State N N MouseEvt -> [Package State Client2ServerMessage]
@@ -108,11 +121,12 @@
 ;; State Server2ClientMessage
 ;; an incoming message is supplemented with the chosen color (from the old state)
 
-(check-expect (incoming '("red" old) 'new) '("red" new)) ;; break type discipline 
+(check-expect (incoming '("red" old) 'new) '("red" new)) ;; break type discipline
+(check-expect (incoming `("red" (,GAME-OVER "seba")) 'new) `("red" (,GAME-OVER "seba"))) 
 
 (define (incoming s msg)
   (match s
-    [`(,my-color ,last-msg) (list my-color msg)]))
+    [`(,my-color ,last-msg) (if (game-over? s) s (list my-color msg))]))
 
 ;; ---------------------------------------------------------------------------------------------------
 ;; State -> Image
@@ -122,11 +136,11 @@
   (match s
     [`(,my-color ,last-message)
      (match last-message
-       [`(,WAITING ,players ,min-players)   (render-waiting players min-players)]
-       [`(,COUNTDOWN ,others ,foods ,n ,me) (render-helper others foods n me my-color)]
-       [`(,PLAYING ,others ,foods ,n ,me)   (render-helper others foods n me my-color)]
-       [`(,GAME-OVER s)                     (render-over s)]
-       [_                                   BACKGROUND])]))
+       [`(,(? (is? WAITING))   ,players ,min-players) (render-waiting players min-players)]
+       [`(,(? (is? COUNTDOWN)) ,others ,foods ,n ,me) (render-helper others foods n me my-color)]
+       [`(,(? (is? PLAYING))   ,others ,foods ,n ,me) (render-helper others foods n me my-color)]
+       [`(,(? (is? GAME-OVER)) s)                     (render-over s)]
+       [_                                             BACKGROUND])]))
 
 ;; N N -> Image 
 (define (render-waiting p# min)
@@ -137,9 +151,13 @@
           (define txt (above (text msg1 22 TEXT-COLOR) (text msg2 22 TEXT-COLOR))))
     (place-image txt 22 44 BACKGROUND)))
 
-;; String -> Image 
+;; State -> Image 
 (define (render-over s)
-  (place-image (text s TEXT-SIZE TEXT-COLOR) (/ SIZE 2) (/ SIZE 2) BACKGROUND))
+  (match s 
+    [`(,my-color (,(? (is? GAME-OVER)) ,s))
+     (local ((define txts
+               (foldr (λ (n img) (above (text n TEXT-SIZE TEXT-COLOR) img)) empty-image s)))
+       (place-image txts (/ SIZE 2) (/ SIZE 2) BACKGROUND))]))
 
 ;; [Listof TurkeyMessage] [Listof FoodMessage] N [Maybe TurkeyMessage] ColorString -> Image
 (define (render-helper others food n me my-color)
@@ -177,7 +195,21 @@
   (match t
     [`(,x ,y) (place-image FOOD x y img)]))
 
-;; -----------------------------------------------------------------------------
+;; ---------------------------------------------------------------------------------------------------
+;; auxiliaries
+
+;; Symbol -> [Any -> Boolean]
+;; generate a predicate to check whether the given value is the symbol s
+
+(check-expect ((is? WAITING) WAITING) #true)
+(check-expect ((is? WAITING) (random 1)) #false)
+
+(define (is? s)
+  (lambda (x)
+    (and (symbol? x) (symbol=? x s))))
+
+
+;; ---------------------------------------------------------------------------------------------------
 ;; launching the server locally 
 
 (require (prefix-in server: "gobbler-server.rkt"))
@@ -186,7 +218,7 @@
   (if with-server?
       (launch-many-worlds (main LOCALHOST "christopher" CF)
                           (main LOCALHOST "matthias"    MF)
-                          (server:main GOBBLER-PORT))
+                          (server:main GOBBLER-PORT 30))
       (launch-many-worlds (main GOBBLER-SERVER "christopher" CF)
                           (main GOBBLER-SERVER "matthias"    MF)
                           (main GOBBLER-SERVER "matthias"    SF))))
