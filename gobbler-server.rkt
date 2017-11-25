@@ -1,5 +1,9 @@
 #lang racket
 
+(provide
+  ;; PorNumber -> ???
+  main)
+
 (require 2htdp/universe)
 
 ;; This will run at dictionary.ccs.neu.edu:20000
@@ -475,16 +479,20 @@ waiting list.
 
 ;; player? -> player?
 ;; Increase the size of the given player's turkey
-(define (fatten-player aplayer)
-  (player (player-iworld aplayer)
-          (fatten-turkey (player-turkey aplayer))))
+(define (fatten-player p)
+  (player (player-iworld p)
+          (fatten-turkey (player-turkey p))))
 
 ;; turkey? -> turkey?
 ;; Increase the size of the given turkey
-(define (fatten-turkey aturkey)
-  (turkey (turkey-loc aturkey)
-          (add1 (turkey-food-eaten aturkey))
-          (turkey-waypoint aturkey)))
+(module+ test
+  (check-equal? (fatten-turkey (turkey (posn 1 2) 10 (posn 3 4)))
+                (turkey (posn 1 2) 11 (posn 3 4))))
+
+(define (fatten-turkey t)
+  (turkey (turkey-loc t)
+          (add1 (turkey-food-eaten t))
+          (turkey-waypoint t)))
 
 ;; was-eaten? : [Listof player?] Food -> Boolean
 ;; Was the given food eaten by any player?
@@ -935,4 +943,4 @@ waiting list.
   
   "all tests run")
 
-(main 20000)
+; (main 20000)
