@@ -32,7 +32,7 @@
       [Maybe TurkeyMessage])  ;; the receiving player's turkey, or #false if observing
 #;
 (list GAME-OVER
-      String)                 ;; a description of how the game ended (winner)
+      [Listof String])        ;; a description of how the game ended (winners)
 
 ;; A TurkeyMessage is a
 #;
