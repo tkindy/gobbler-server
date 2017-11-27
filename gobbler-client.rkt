@@ -208,16 +208,26 @@
   (lambda (x)
     (and (symbol? x) (symbol=? x s))))
 
-
 ;; ---------------------------------------------------------------------------------------------------
 ;; launching the server locally 
 
 (require (prefix-in server: "gobbler-server.rkt"))
 
+;; IP -> N
+;; how does the server react to bad messages 
+(define (bad where)
+  (big-bang 0
+    (to-draw    (lambda (n) (text (number->string n) 88 'red)))
+    (on-receive (lambda (n msg) (make-package (+ n 1) (list 20 30))))
+    (name       "bad bad bad")
+    (register   where)
+    (port       GOBBLER-PORT)))
+
 (define (start with-server?)
   (if with-server?
       (launch-many-worlds (main LOCALHOST "christopher" CF)
                           (main LOCALHOST "matthias"    MF)
+                          (bad LOCALHOST)
                           (server:main GOBBLER-PORT 30))
       (launch-many-worlds (main GOBBLER-SERVER "christopher" CF)
                           (main GOBBLER-SERVER "matthias"    MF)
