@@ -80,67 +80,97 @@
 (define GOBBLER-PORT   20000)
 
 ;; ---------------------------------------------------------------------------------------------------
-;; State = (list ColorString Server2ClientMessage)
+;; State = (list TurkeyMessage Server2ClientMessage)
+;; INTERPRETATION Here the TurkeyMessage specifies the current waypoint that the client has chosen. 
 
 ;; IP String ColorString -> State 
 (define (main where handle color)
   ;; this initial state temporarily breaks types "for free"
-  (big-bang (list color "dummy message")
-    (to-draw    render)
-    (on-receive incoming)
-    (on-mouse   send-click)
-    (stop-when  game-over? render-over)
-    (name       handle)
-    (register   where)
-    (port       GOBBLER-PORT)))
+  (big-bang (list (list handle 0 0 0) "dummy message")
+            (to-draw    (render color))
+            (on-receive incoming)
+            (stop-when  game-over? (render-over color))
+            (name       handle)
+            (register   where)
+            (port       GOBBLER-PORT)))
 
 ;; ---------------------------------------------------------------------------------------------------
 ;; State -> Boolean
 ;; did the player receive a 'game over' message?
 
-(check-expect (game-over? `("red" (,GAME-OVER "you won"))) #true)
-(check-expect (game-over? `("red" old)) #false)
+(check-expect (game-over? `(stuff (,GAME-OVER "you won"))) #true)
+(check-expect (game-over? `(stuff old)) #false)
 
 (define (game-over? s)
   (match s
-    [`(,my-color (,(? (is? GAME-OVER)) ,x ...)) #true]
-    [_ #false]))
+    [`(,my-properties (,(? (is? GAME-OVER)) ,x ...)) #true]
+    [else #false]))
 
 ;; ---------------------------------------------------------------------------------------------------
-;; State N N MouseEvt -> [Package State Client2ServerMessage]
-;; if the player presses the mouse, its waypoint is sent to the server 
-
-(check-expect (send-click 'old 1 2 "button-up") 'old)
-(check-expect (send-click 'old 1 2 "button-down") (make-package 'old (list WAYPOINT 1 2)))
-
-(define (send-click s x y me)
-  (if (mouse=? "button-down" me)
-      (make-package s (list WAYPOINT x y))
-      s))
-
-;; ---------------------------------------------------------------------------------------------------
-;; State Server2ClientMessage
+;; State Server2ClientMessage -> StateOrPackage
 ;; an incoming message is supplemented with the chosen color (from the old state)
 
-(check-expect (incoming '("red" old) 'new) '("red" new)) ;; break type discipline
+(check-expect (incoming '(("red" 0 0 0) old) 'new) '(("red" 0 0 0) new)) ;; break type discipline
 
 (define (incoming s msg)
   (match s
-    [`(,my-color ,last-msg) (list my-color msg)]))
+    [`(,my-properties ,last-msg) (pick-new-waypoint my-properties msg)]))
 
+;; ColorString State -> StateOrPackage
+(define (pick-new-waypoint my-properties msg)
+  (match msg
+    [`(,(? (is? COUNTDOWN)) ,others ,foods ,n ,me) (pick me others foods my-properties msg)]
+    [`(,(? (is? PLAYING))   ,others ,foods ,n ,me) (pick me others foods my-properties msg)]
+    [else (list my-properties msg)]))
+
+;; [Maybe Turkey] [Listof Turkey] [Listof Food] (list N N) N Server2ClientMessage -> StateOrPackage
+
+(check-expect (pick (list "chris" 0 0 0) '() (list (list 3 4) (list 12 5))  (list "chris" 0 0 0) 'msg)
+              (make-package (list (list "chris" 3 4 0) 'msg) (list WAYPOINT 3 4)))
+
+(define (pick me others food my-properties msg)
+  (if (boolean? me)
+      (list my-properties msg)
+      (local ((define nxt (pick-closest me others food)))
+        (match my-properties
+          [`(,name ,x ,y ,size)
+           (if (equal? (list x y) nxt)
+               (list my-properties msg)
+               (local ((define new-x (first nxt))
+                       (define new-y (second nxt))
+                       (define new-s (list name new-x new-y size)))
+                 (make-package (list new-s msg) (list WAYPOINT new-x new-y))))]))))
+
+;; Turkey [Listof Turkey] [Listof Food] -> (list x y)
+;; choose the closest piece of food as the next 
+(define (pick-closest me others foods)
+  (match me
+    [`(,name ,x ,y ,size) 
+     (local ((define distances
+               (map (lambda (o) (match o [`(,x1 ,y1) (list (distance x y x1 y1) x1 y1)])) foods)))
+       (rest (argmin first distances)))]))
+
+(check-expect (distance 0 0 12 5) 13)
+(check-expect (distance 3 4 15 9) 13)
+(define (distance x y x1 y1)
+  (sqrt
+   (+ (sqr (- x x1)) (sqr (- y y1)))))
+
+  
 ;; ---------------------------------------------------------------------------------------------------
-;; State -> Image
+;; ColorString -> [State -> Image]
 ;; render the state of the game 
 
-(define (render s)
-  (match s
-    [`(,my-color ,last-message)
-     (match last-message
-       [`(,(? (is? WAITING))   ,players ,min-players) (render-waiting players min-players)]
-       [`(,(? (is? COUNTDOWN)) ,others ,foods ,n ,me) (render-helper others foods n me my-color)]
-       [`(,(? (is? PLAYING))   ,others ,foods ,n ,me) (render-helper others foods n me my-color)]
-       [`(,(? (is? GAME-OVER)) s)                     (render-over s)]
-       [_                                             BACKGROUND])]))
+(define (render my-color)
+  (lambda (s)
+    (match s
+      [`(,me ,last-message)
+       (match last-message
+         [`(,(? (is? WAITING))   ,players ,min-players) (render-waiting players min-players)]
+         [`(,(? (is? COUNTDOWN)) ,others ,foods ,n ,me) (render-helper others foods n me my-color)]
+         [`(,(? (is? PLAYING))   ,others ,foods ,n ,me) (render-helper others foods n me my-color)]
+         [`(,(? (is? GAME-OVER)) s)                     (render-over s)]
+         [_                                             BACKGROUND])])))
 
 ;; N N -> Image 
 (define (render-waiting p# min)
@@ -151,13 +181,14 @@
           (define txt (above (text msg1 22 TEXT-COLOR) (text msg2 22 TEXT-COLOR))))
     (place-image txt 22 44 BACKGROUND)))
 
-;; State -> Image 
-(define (render-over s)
-  (match s 
-    [`(,my-color (,(? (is? GAME-OVER)) ,s))
-     (local ((define txts
-               (foldr (λ (n img) (above (text n TEXT-SIZE TEXT-COLOR) img)) empty-image s)))
-       (place-image txts (/ SIZE 2) (/ SIZE 2) BACKGROUND))]))
+;; ColorString -> [State -> Image]
+(define (render-over my-color)
+  (lambda (s)
+    (match s 
+      [`(,me (,(? (is? GAME-OVER)) ,s))
+       (local ((define txts
+                 (foldr (λ (n img) (above (text n TEXT-SIZE TEXT-COLOR) img)) empty-image s)))
+         (place-image txts (/ SIZE 2) (/ SIZE 2) BACKGROUND))])))
 
 ;; [Listof TurkeyMessage] [Listof FoodMessage] N [Maybe TurkeyMessage] ColorString -> Image
 (define (render-helper others food n me my-color)
@@ -207,7 +238,6 @@
 (define (is? s)
   (lambda (x)
     (and (symbol? x) (symbol=? x s))))
-
 
 ;; ---------------------------------------------------------------------------------------------------
 ;; launching the server locally 
