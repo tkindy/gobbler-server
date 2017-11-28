@@ -328,7 +328,7 @@ waiting list.
   
   (cond
     [(waiting? new-uni)
-     (let* ([waiting-msg (list 'waiting
+     (let* ([waiting-msg (list WAITING
                                (length (game-queue new-uni))
                                NUM-PLAYERS)]
             [mail (map (λ (w) (make-mail w waiting-msg))
@@ -532,43 +532,6 @@ waiting list.
     [(false? goal) loc]
     [(posn? goal) (move-toward loc goal close)]))
 
-;; [Listof Turkey] [Listof Posn] -> [Listof Turkey]
-;; Fatten all turkeys who eat food (no food should be eaten twice)
-;; Uses accumulator-style design (remove foods each turkey eats as it goes)
-(define (eat* all-turkeys all-food)
-  (cond
-    [(empty? all-turkeys) '()]
-    [(cons? all-turkeys)
-     (define new-turkey (turkey-eat (first all-turkeys) all-food))
-     (define new-food (was-eaten/single-turkey (first all-turkeys) all-food))
-     (cons new-turkey (eat* (rest all-turkeys) new-food))]))
-
-;; Turkey [Listof Posn] -> Turkey
-;; Fatten the turkey if it ate any food
-(define (turkey-eat aturkey all-food)
-  (foldr (λ (afood sofar) (eat-food-if-close sofar afood)) aturkey all-food))
-
-;; Turkey Posn -> Turkey
-;; Increase the size of a turkey if it is close to some food
-(define (eat-food-if-close aturkey afood)
-  (if (turkey-eat-food? aturkey afood)
-      (turkey (turkey-loc aturkey)
-              (add1 (turkey-food-eaten aturkey))
-              (turkey-waypoint aturkey))
-      aturkey))
-
-;; Turkey [Listof Posn] -> [Listof Posn]
-;; Remove any food the turkey has eaten
-(define (was-eaten/single-turkey aturkey all-food)
-  (filter (λ (afood) (not (turkey-eat-food? aturkey afood))) all-food))
-
-;; [Listof Turkey] [Listof Posn] -> [Listof Posn]
-;; Remove any food that has been eaten by any turkey
-(define (was-eaten* lot lof)
-  (define (uneaten? afood)
-    (andmap (λ (t) (not (turkey-eat-food? t afood))) lot))
-  (filter uneaten? lof))
-
 ;; Turkey Posn -> Boolean
 ;; Has the turkey eaten the food?
 (define (turkey-eat-food? aturkey afood)
@@ -600,9 +563,9 @@ waiting list.
 ;; Get the universe state
 (define (universe-state uni)
   (cond
-    [(waiting? uni)   'waiting]
-    [(countdown? uni) 'countdown]
-    [(playing? uni)   'playing]))
+    [(waiting? uni)   WAITING]
+    [(countdown? uni) COUNTDOWN]
+    [(playing? uni)   PLAYING]))
 
 ;; GobblerUniverse iworld? sexp? -> GobblerBundle
 ;; Update the waypoint of the player
@@ -855,40 +818,6 @@ waiting list.
   (check-equal? (advance-game COUNTDOWN4) BUNDLE4)
   (check-equal? (advance-game PLAYING0) BUNDLE5)
   (check-equal? (advance-game PLAYING3) BUNDLE0)
-
-  (check-equal? (eat* '() '()) '())
-  (check-equal? (eat* (list TURKEY1 TURKEY2) '()) (list TURKEY1 TURKEY2))
-  (check-equal? (eat* '() (list (posn 100 5) (posn 0 0))) '())
-  (check-equal? (eat* (list TURKEY1 TURKEY2)
-                      (list (posn 100 100) (posn 30 100)
-                            (posn 50 75) (posn 0 0)))
-                (list TURKEY1
-                      TURKEY2.1))
-  (check-equal? (eat* (list (struct-copy turkey TURKEY1) TURKEY1)
-                      (list (posn 45 50)))
-                (list TURKEY1.1 TURKEY1))
-
-
-  (check-equal? (turkey-eat TURKEY1 '()) TURKEY1)
-  (check-equal? (turkey-eat TURKEY2
-                            (list (posn 3 4) (posn 30 100) (posn 4 3)))
-                TURKEY2.1)
-
-  (check-equal? (eat-food-if-close TURKEY2 (posn 2 1000)) TURKEY2)
-  (check-equal? (eat-food-if-close TURKEY2 (posn 30 101)) TURKEY2.1)
-
-  (check-equal? (was-eaten/single-turkey TURKEY1 '()) '())
-  (check-equal? (was-eaten/single-turkey
-                 TURKEY0
-                 (list (posn 18 72) (posn 0 0) (posn 21 74)))
-                (list (posn 0 0)))
-
-  (check-equal? (was-eaten* '() '()) '())
-  (check-equal? (was-eaten* '() (list (posn 50 10) (posn 0 0)))
-                (list (posn 50 10) (posn 0 0)))
-  (check-equal? (was-eaten* (list TURKEY1 TURKEY2)
-                            (list (posn 45 50) (posn 0 0) (posn 30 102)))
-                (list (posn 0 0)))
 
   (check-true (turkey-eat-food? TURKEY1 (posn 45 50)))
   (check-false (turkey-eat-food? TURKEY2 (posn 100 200)))
