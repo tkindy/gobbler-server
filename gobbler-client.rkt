@@ -111,13 +111,19 @@
 ;; if the player presses the mouse, its waypoint is sent to the server 
 
 (check-expect (send-click 'old 1 2 "button-up") 'old)
-(check-expect (send-click 'old 1 2 "button-down") (make-package 'old (list WAYPOINT 1 2)))
+(check-expect (send-click `(old (,PLAYING 1)) 1 2 "button-down")
+              (make-package `(old (,PLAYING 1)) (list WAYPOINT 1 2)))
 
 (define (send-click s x y me)
-  (if (mouse=? "button-down" me)
+  (if (and (mouse=? "button-down" me) (playing? s))
       (make-package s (list WAYPOINT x y))
       s))
 
+(define (playing? s)
+  (match s
+    [`(,my-color (,(? (is? PLAYING)) ,x ...)) #true]
+    [else #false]))
+      
 ;; ---------------------------------------------------------------------------------------------------
 ;; State Server2ClientMessage
 ;; an incoming message is supplemented with the chosen color (from the old state)

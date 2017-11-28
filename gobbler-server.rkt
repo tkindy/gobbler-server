@@ -535,18 +535,16 @@ waiting list.
 (define (turkey-eat-food? aturkey afood)
   (close? (turkey-loc aturkey) afood CLOSE))
 
-;; -----------------------------------------------------------------------------
-
+;; ---------------------------------------------------------------------------------------------------
 ;; GobblerUniverse iworld? sexp? -> GobblerBundle
 ;; Handle a message received from a client
 (define (receive-msg uni world sexp)
   ;; -> GobblerBundle
-  ;; Produce a bundle that sends the world an error message and
-  ;; disconnects from it
+  ;; Produce a bundle that sends the world an error message and disconnects from it
   (define (error-bundle)
-    (let* ([state (universe-state uni)]
-           [msg   (format UNEXPECTED-MSG state sexp)])
-      (make-bundle (drop-world uni world) (list (make-mail world msg)) (list world))))
+    [define state (universe-state uni)]
+    [define msg   (format UNEXPECTED-MSG state sexp)]
+    (make-bundle (drop-world uni world) (list (make-mail world msg)) (list world)))
   (cond
     [(waiting? uni)   (error-bundle)]
     [(countdown? uni) (error-bundle)]

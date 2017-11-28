@@ -119,7 +119,6 @@
 ;; ColorString State -> StateOrPackage
 (define (pick-new-waypoint my-properties msg)
   (match msg
-    [`(,(? (is? COUNTDOWN)) ,others ,foods ,n ,me) (pick me others foods my-properties msg)]
     [`(,(? (is? PLAYING))   ,others ,foods ,n ,me) (pick me others foods my-properties msg)]
     [else (list my-properties msg)]))
 
