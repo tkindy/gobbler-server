@@ -222,14 +222,12 @@ waiting list.
 (define CLOSE (/ GAME-SIZE 100))
 
 ;; the message template to send a client if an unexpected message was received
-(define UNEXPECTED-MSG "unexpected message received by server in \"~s\" state: ~s")
+(define UNEXPECTED-MSG "unexpected message received by server in ~a state: ~s")
 
 ;; =====================================
 ;; SERVER
 ;; =====================================
 
-;; Number -> Void
-;; Run the server
 (define (main p (gt GAME-TICKS))
   (set! GAME-TICKS (if (string? gt) (string->number gt) gt))
   (define the-port (if (string? p) (string->number p) p))
@@ -238,11 +236,11 @@ waiting list.
   (printf "running gobbler-server on port ~a for ~a ticks\n" the-port GAME-TICKS)
   (void
    (universe INITIAL-STATE
-             [port the-port]
-             [on-new queue-world]
+             [port          the-port]
+             [on-new        queue-world]
              [on-disconnect drop-world]
-             [on-tick advance-game (/ TICKS-PER-SECOND)]
-             [on-msg receive-msg])))
+             [on-tick       advance-game (/ TICKS-PER-SECOND)]
+             [on-msg        receive-msg])))
 
 ;; GobblerUniverse iworld? -> GobblerUniverse
 ;; Queue the new player
@@ -548,9 +546,7 @@ waiting list.
   (define (error-bundle)
     (let* ([state (universe-state uni)]
            [msg   (format UNEXPECTED-MSG state sexp)])
-      (make-bundle (drop-world uni world)
-                   (list (make-mail world msg))
-                   (list world))))
+      (make-bundle (drop-world uni world) (list (make-mail world msg)) (list world))))
   (cond
     [(waiting? uni)   (error-bundle)]
     [(countdown? uni) (error-bundle)]
@@ -777,15 +773,15 @@ waiting list.
   (define BUNDLE5 (make-bundle PLAYING0.1 mails2 '()))
   
   (define BUNDLE6
-    (make-bundle PLAYING1.2
-                 `(,(make-mail iworld1
-                               "unexpected message received by server in \"playing\" state: (here is some garbage)"))
-                 `(,iworld1)))
+    (make-bundle
+     PLAYING1.2
+     `(,(make-mail iworld1 (format UNEXPECTED-MSG "playing" '(here is some garbage))))
+     `(,iworld1)))
   (define BUNDLE7
-    (make-bundle WAITING0
-                 `(,(make-mail iworld1
-                               "unexpected message received by server in \"waiting\" state: (waypoint 30 20)"))
-                 `(,iworld1)))
+    (make-bundle
+     WAITING0
+     `(,(make-mail iworld1 (format UNEXPECTED-MSG "waiting" '(waypoint 30 20))))
+     `(,iworld1)))
   
   ;; =====================================
   ;; SERVER TESTS
