@@ -5,10 +5,10 @@ exec racket -tm "$0" ${1+"$@"}
 #lang racket
 
 (provide
-  ;; PorNumber [N] -> Void
-  ;; consumes the portnumber and optionally the number of game ticks 
-  ;; run as ./gobbler-server port-number [game-ticks]
-  main)
+ ;; PortNumber [N] -> Void
+ ;; consumes the portnumber and optionally the number of game ticks 
+ ;; run as ./gobbler-server port-number [game-ticks]
+ main)
 
 (require 2htdp/universe)
 
@@ -133,6 +133,7 @@ waiting list.
 ;; - CountdownMessage
 ;; - PlayingMessage
 ;; - GameOverMessage
+;; - ErrorMessage
 ;; Represents a message that is sent from the server to the clients
 
 (define WAITING 'waiting)
@@ -171,6 +172,9 @@ waiting list.
 (define GAME-OVER 'game-over)
 ;; A GameOverMessage is a (list 'game-over OutcomeMessage)
 ;; Represents information on the outcome of the game
+
+;; An ErrorMessage is a string?
+;; Represents an error experienced by the server
 
 ;; An OutcomeMessage is a (Listof string?)
 ;; Represents the names of the winners of the game
@@ -217,12 +221,14 @@ waiting list.
 (define GAME-SIZE 600)
 (define CLOSE (/ GAME-SIZE 100))
 
+;; the message template to send a client if an unexpected message was received
+(define UNEXPECTED-MSG "unexpected message received by server in \"~s\" state: ~s")
 
 ;; =====================================
 ;; SERVER
 ;; =====================================
 
-;; Number -> GobblerUniverse
+;; Number -> Void
 ;; Run the server
 (define (main p (gt GAME-TICKS))
   (set! GAME-TICKS (if (string? gt) (string->number gt) gt))
@@ -231,12 +237,12 @@ waiting list.
     (error 'gobbler-server "start with ./gobbler-server port-number [game-ticks]"))
   (printf "running gobbler-server on port ~a for ~a ticks\n" the-port GAME-TICKS)
   (void
-    (universe INITIAL-STATE
-      [port the-port]
-      [on-new queue-world]
-      [on-disconnect drop-world]
-      [on-tick advance-game (/ TICKS-PER-SECOND)]
-      [on-msg update-waypoint])))
+   (universe INITIAL-STATE
+             [port the-port]
+             [on-new queue-world]
+             [on-disconnect drop-world]
+             [on-tick advance-game (/ TICKS-PER-SECOND)]
+             [on-msg receive-msg])))
 
 ;; GobblerUniverse iworld? -> GobblerUniverse
 ;; Queue the new player
@@ -571,18 +577,40 @@ waiting list.
 ;; -----------------------------------------------------------------------------
 
 ;; GobblerUniverse iworld? sexp? -> GobblerBundle
-;; Update the waypoint of the player
-(define (update-waypoint uni world sexp)
+;; Handle a message received from a client
+(define (receive-msg uni world sexp)
+  ;; -> GobblerBundle
+  ;; Produce a bundle that sends the world an error message and
+  ;; disconnects from it
+  (define (error-bundle)
+    (let* ([state (universe-state uni)]
+           [msg   (format UNEXPECTED-MSG state sexp)])
+      (make-bundle (drop-world uni world)
+                   (list (make-mail world msg))
+                   (list world))))
   (cond
-    [(waiting? uni)   uni]
-    [(countdown? uni) uni]
+    [(waiting? uni)   (error-bundle)]
+    [(countdown? uni) (error-bundle)]
     [(playing? uni)
      (if (waypoint-message? sexp)
-         (playing (game-queue uni)
-                  (update-waypoint/players (ready-players uni) world sexp)
-                  (ready-foods uni)
-                  (ready-time-left uni))
-         uni)]))
+         (update-waypoint uni world sexp)
+         (error-bundle))]))
+
+;; GobblerUniverse -> symbol?
+;; Get the universe state
+(define (universe-state uni)
+  (cond
+    [(waiting? uni)   'waiting]
+    [(countdown? uni) 'countdown]
+    [(playing? uni)   'playing]))
+
+;; GobblerUniverse iworld? sexp? -> GobblerBundle
+;; Update the waypoint of the player
+(define (update-waypoint uni world sexp)
+  (playing (game-queue uni)
+           (update-waypoint/players (ready-players uni) world sexp)
+           (ready-foods uni)
+           (ready-time-left uni)))
 
 ;; [Listof player?] iworld? WaypointMessage -> [Listof player?]
 ;; Update the waypoint of the player
@@ -604,17 +632,6 @@ waiting list.
 ;; =====================================
 ;; UTILS
 ;; =====================================
-
-;; Playing iworld? -> [Maybe Player]
-;; Returns the player that corresponds with the given iworld or false if no such
-;; player exists
-(define (get-player playing world)
-  (findf (λ (p) (iworld=? world (player-iworld p))) (ready-players playing)))
-
-;; sexp? -> Boolean
-;; Determines if the given sexp is a valid well-formed client to server message
-(define (c2s-message? sexp)
-  (waypoint-message? sexp))
 
 ;; sexp? -> Boolean
 ;; Determines if the given sexp is a well-formed waypoint message
@@ -748,6 +765,8 @@ waiting list.
                               `(,POSN0 ,POSN1) GAME-TICKS))
   (define PLAYING1.1 (playing `(,iworld3) `(,PLAYER1.1 ,PLAYER2)
                               `(,POSN0 ,POSN1) GAME-TICKS))
+  (define PLAYING1.2 (playing `(,iworld3) `(,PLAYER2)
+                              `(,POSN0 ,POSN1) GAME-TICKS))
   (define PLAYING2   (playing `(,iworld3) `(,PLAYER2) `(,POSN0 ,POSN1)
                               GAME-TICKS))
   (define PLAYING3   (playing '() `(,PLAYER1 ,PLAYER2) `(,POSN0 ,POSN1)
@@ -759,7 +778,7 @@ waiting list.
                             (make-mail iworld2 `(,GAME-OVER ("iworld1"))))
                       '()))
   (define BUNDLE1    (make-bundle WAITING0 '() '()))
-  (define BUNDLE2    (make-bundle WAITING1 (list (make-mail iworld1 '(waiting 1 2))) '()))
+  (define BUNDLE2    (make-bundle WAITING1 `(,(make-mail iworld1 '(waiting 1 2))) '()))
 
   (define player-msg0   '("iworld1" 20 70 1))
   (define player-msg0.1 '("iworld1" 26 62 1))
@@ -793,6 +812,17 @@ waiting list.
   (define BUNDLE3 (make-bundle COUNTDOWN3 mails0 '()))
   (define BUNDLE4 (make-bundle PLAYING0 mails1 '()))
   (define BUNDLE5 (make-bundle PLAYING0.1 mails2 '()))
+  
+  (define BUNDLE6
+    (make-bundle PLAYING1.2
+                 `(,(make-mail iworld1
+                               "unexpected message received by server in \"playing\" state: (here is some garbage)"))
+                 `(,iworld1)))
+  (define BUNDLE7
+    (make-bundle WAITING0
+                 `(,(make-mail iworld1
+                               "unexpected message received by server in \"waiting\" state: (waypoint 30 20)"))
+                 `(,iworld1)))
   
   ;; =====================================
   ;; SERVER TESTS
@@ -863,21 +893,19 @@ waiting list.
   (check-true (turkey-eat-food? TURKEY1 (posn 45 50)))
   (check-false (turkey-eat-food? TURKEY2 (posn 100 200)))
 
-  (check-equal? (update-waypoint PLAYING1 iworld1 '(here is some garbage))
+  (check-equal? (receive-msg PLAYING1 iworld1 '(here is some garbage))
+                BUNDLE6)
+  (check-equal? (receive-msg PLAYING1 iworld3 '(waypoint 30 20))
                 PLAYING1)
-  (check-equal? (update-waypoint PLAYING1 iworld1 2)
+  (check-equal? (receive-msg WAITING1 iworld1 '(waypoint 30 20))
+                BUNDLE7)
+  (check-equal? (receive-msg PLAYING1 iworld1 '(waypoint -1000 -1000))
                 PLAYING1)
-  (check-equal? (update-waypoint PLAYING1 iworld3 '(waypoint 30 20))
-                PLAYING1)
-  (check-equal? (update-waypoint WAITING1 iworld1 '(waypoint 30 20))
-                WAITING1)
-  (check-equal? (update-waypoint PLAYING1 iworld1 '(waypoint -1000 -1000))
-                PLAYING1)
-  (check-equal? (update-waypoint PLAYING1 iworld1 '(waypoint 30 20))
+  (check-equal? (receive-msg PLAYING1 iworld1 '(waypoint 30 20))
                 PLAYING1.1)
-  (check-equal? (update-waypoint PLAYING1 iworld3 '(waypoint 30 20))
+  (check-equal? (receive-msg PLAYING1 iworld3 '(waypoint 30 20))
                 PLAYING1)
-  (check-equal? (update-waypoint PLAYING1 iworld1 '(waypoint -1000 -1000))
+  (check-equal? (receive-msg PLAYING1 iworld1 '(waypoint -1000 -1000))
                 PLAYING1)
   (check-equal? (update-waypoint/players `(,PLAYER1 ,PLAYER2) iworld1 '(waypoint 30 20))
                 `(,PLAYER1.1 ,PLAYER2))
@@ -885,15 +913,6 @@ waiting list.
   ;; =====================================
   ;; UTILS TESTS
   ;; =====================================
-
-  (check-equal? (get-player PLAYING1 iworld1) PLAYER1)
-  (check-equal? (get-player PLAYING2 iworld2) PLAYER2)
-  (check-false (get-player PLAYING2 iworld3))
-
-  (check-true (c2s-message? '(waypoint 2 2)))
-  (check-true (c2s-message? '(waypoint -1 2345)))
-  (check-false (c2s-message? '(garbage 1 2)))
-  (check-false (c2s-message? 'garbage))
 
   (check-true (waypoint-message? '(waypoint 3 3)))
   (check-true (waypoint-message? '(waypoint -23 234)))
