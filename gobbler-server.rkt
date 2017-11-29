@@ -320,6 +320,7 @@ waiting list.
     (if (>= (length q) NUM-PLAYERS)
         (let* ([dequeued (take q NUM-PLAYERS)]
                [players (map new-player dequeued)])
+          (printf "entering countdown\n")
           (countdown (list-tail q NUM-PLAYERS)
                      players
                      (generate-food)
@@ -342,10 +343,12 @@ waiting list.
 (define (advance-countdown uni)
   (define new-uni
     (if (<= (ready-time-left uni) 0)
-        (playing (game-queue uni)
-                 (ready-players uni)
-                 (ready-foods uni)
-                 GAME-TICKS)
+        (begin
+          (printf "entering playing\n")
+          (playing (game-queue uni)
+                   (ready-players uni)
+                   (ready-foods uni)
+                   GAME-TICKS))
         (countdown (game-queue uni)
                    (ready-players uni)
                    (ready-foods uni)
@@ -405,6 +408,7 @@ waiting list.
 (define (advance-playing game)
   (if (<= (ready-time-left game) 0)
       (let ([player-worlds (map player-iworld (ready-players game))])
+        (printf "entering waiting\n")
         (make-bundle (waiting (append (game-queue game)
                                       player-worlds))
                      (game-over-mails game)
