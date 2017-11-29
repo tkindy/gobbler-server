@@ -1,6 +1,6 @@
 #! /bin/sh
 #|
-exec racket -tm "$0" ${1+"$@"}
+exec racket -W warning -L info -tm "$0" ${1+"$@"}
 |#
 #lang racket
 
@@ -245,7 +245,7 @@ waiting list.
 ;; GobblerUniverse iworld? -> GobblerBundle
 ;; Queue the new player
 (define (queue-world uni world)
-  (printf "~s connected\n" (iworld-name world))
+  (log-info "~s connected\n" (iworld-name world))
 
   (if (string? (iworld-name world))
       (let ([nu-q (append (game-queue uni) (list world))])
@@ -282,7 +282,7 @@ waiting list.
   (define (drop-player* players)
     (drop-player players world))
   (define new-queue (drop-queued (game-queue uni) world))
-  (printf "~s disconnected\n" (iworld-name world))
+  (log-info "~s disconnected\n" (iworld-name world))
   
   (cond
     [(waiting? uni)   (waiting new-queue)]
@@ -323,7 +323,7 @@ waiting list.
     (if (>= (length q) NUM-PLAYERS)
         (let* ([dequeued (take q NUM-PLAYERS)]
                [players (map new-player dequeued)])
-          (printf "entering countdown\n")
+          (log-info "entering countdown\n")
           (countdown (list-tail q NUM-PLAYERS)
                      players
                      (generate-food)
@@ -347,7 +347,7 @@ waiting list.
   (define new-uni
     (if (<= (ready-time-left uni) 0)
         (begin
-          (printf "entering playing\n")
+          (log-info "entering playing\n")
           (playing (game-queue uni)
                    (ready-players uni)
                    (ready-foods uni)
@@ -411,7 +411,7 @@ waiting list.
 (define (advance-playing game)
   (if (<= (ready-time-left game) 0)
       (let ([player-worlds (map player-iworld (ready-players game))])
-        (printf "entering waiting\n")
+        (log-info "entering waiting\n")
         (make-bundle (waiting (append (game-queue game)
                                       player-worlds))
                      (game-over-mails game)
@@ -562,7 +562,7 @@ waiting list.
 ;; -> GobblerBundle
 ;; Produce a bundle that sends the world an error message and disconnects from it
 (define (error-bundle uni world msg)
-  (printf msg)
+  (log-error msg)
   (make-bundle (drop-world uni world) (list (make-mail world msg)) (list world)))
 
 ;; GobblerUniverse -> symbol?
