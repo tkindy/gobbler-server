@@ -604,8 +604,8 @@ waiting list.
        (= (length sexp) 3)
        (symbol? (first sexp))
        (symbol=? (first sexp) WAYPOINT)
-       (number? (second sexp))
-       (number? (third sexp))))
+       (real? (second sexp))
+       (real? (third sexp))))
 
 ;; WaypointMessage -> Posn
 ;; Converts the given waypoint message into a posn
