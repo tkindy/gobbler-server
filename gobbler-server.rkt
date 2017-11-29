@@ -245,6 +245,7 @@ waiting list.
 ;; GobblerUniverse iworld? -> GobblerUniverse
 ;; Queue the new player
 (define (queue-world uni world)
+  (printf "~s connected" (iworld-name world))
   (define nu-q (append (game-queue uni) (list world)))
   (cond
     [(waiting? uni) (waiting nu-q)]
@@ -278,7 +279,8 @@ waiting list.
   (define (drop-player* players)
     (drop-player players world))
   (define new-queue (drop-queued (game-queue uni) world))
-
+  (printf "~s disconnected" (iworld-name world))
+  
   (cond
     [(waiting? uni)   (waiting new-queue)]
     [(countdown? uni) (countdown new-queue
@@ -544,6 +546,7 @@ waiting list.
   (define (error-bundle)
     [define state (universe-state uni)]
     [define msg   (format UNEXPECTED-MSG state sexp)]
+    (printf "dropping ~s for msg: ~s" (iworld-name world) sexp)
     (make-bundle (drop-world uni world) (list (make-mail world msg)) (list world)))
   (cond
     [(waiting? uni)   (error-bundle)]
