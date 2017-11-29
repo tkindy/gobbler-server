@@ -222,7 +222,7 @@ waiting list.
 (define CLOSE (/ GAME-SIZE 100))
 
 ;; the message template to send a client if an unexpected message was received
-(define UNEXPECTED-MSG "unexpected message received by server in ~a state: ~s")
+(define UNEXPECTED-MSG "unexpected message received by server in ~a state: ~s\n")
 
 ;; =====================================
 ;; SERVER
