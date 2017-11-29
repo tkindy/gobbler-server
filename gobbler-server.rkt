@@ -242,15 +242,18 @@ waiting list.
              [on-tick       advance-game (/ TICKS-PER-SECOND)]
              [on-msg        receive-msg])))
 
-;; GobblerUniverse iworld? -> GobblerUniverse
+;; GobblerUniverse iworld? -> GobblerBundle
 ;; Queue the new player
 (define (queue-world uni world)
   (printf "~s connected\n" (iworld-name world))
-  (define nu-q (append (game-queue uni) (list world)))
-  (cond
-    [(waiting? uni) (waiting nu-q)]
-    [(countdown? uni) (countdown nu-q (ready-players uni) (ready-foods uni) (ready-time-left uni))]
-    [else (playing nu-q (ready-players uni) (ready-foods uni) (ready-time-left uni))]))
+
+  (if (string? (iworld-name world))
+      (let ([nu-q (append (game-queue uni) (list world))])
+        (cond
+          [(waiting? uni) (waiting nu-q)]
+          [(countdown? uni) (countdown nu-q (ready-players uni) (ready-foods uni) (ready-time-left uni))]
+          [else (playing nu-q (ready-players uni) (ready-foods uni) (ready-time-left uni))]))
+      (error-bundle uni world "name must be a string\n")))
 
 ;; iworld? -> player?
 ;; Create a new player at a random location
@@ -545,20 +548,22 @@ waiting list.
 ;; GobblerUniverse iworld? sexp? -> GobblerBundle
 ;; Handle a message received from a client
 (define (receive-msg uni world sexp)
-  ;; -> GobblerBundle
-  ;; Produce a bundle that sends the world an error message and disconnects from it
-  (define (error-bundle)
-    [define state (universe-state uni)]
-    [define msg   (format UNEXPECTED-MSG state sexp)]
-    (printf "dropping ~s for msg: ~s\n" (iworld-name world) sexp)
-    (make-bundle (drop-world uni world) (list (make-mail world msg)) (list world)))
+  [define state (universe-state uni)]
+  [define (error-bundle*) (error-bundle uni world (format UNEXPECTED-MSG state sexp))]
   (cond
-    [(waiting? uni)   (error-bundle)]
-    [(countdown? uni) (error-bundle)]
+    [(waiting? uni)   (error-bundle*)]
+    [(countdown? uni) (error-bundle*)]
     [(playing? uni)
      (if (waypoint-message? sexp)
          (update-waypoint uni world sexp)
-         (error-bundle))]))
+         (error-bundle*))]))
+
+
+;; -> GobblerBundle
+;; Produce a bundle that sends the world an error message and disconnects from it
+(define (error-bundle uni world msg)
+  (printf msg)
+  (make-bundle (drop-world uni world) (list (make-mail world msg)) (list world)))
 
 ;; GobblerUniverse -> symbol?
 ;; Get the universe state
