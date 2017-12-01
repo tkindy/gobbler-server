@@ -224,6 +224,9 @@ waiting list.
 ;; the message template to send a client if an unexpected message was received
 (define UNEXPECTED-MSG "unexpected message received by server in ~a state: ~s\n")
 
+;; world name regex
+(define WORLD-NAME-RE #rx"^\\d{4}+\\d{4}$")
+
 ;; =====================================
 ;; SERVER
 ;; =====================================
@@ -249,13 +252,14 @@ waiting list.
 (define (queue-world uni world)
   (printf "~s connected\n" (iworld-name world))
 
-  (if (string? (iworld-name world))
+  (if (and (string? (iworld-name world))
+           (regexp-match-exact? WORLD-NAME-RE (iworld-name world)))
       (let ([nu-q (append (game-queue uni) (list world))])
         (cond
           [(waiting? uni) (waiting nu-q)]
           [(countdown? uni) (countdown nu-q (ready-players uni) (ready-foods uni) (ready-time-left uni))]
           [else (playing nu-q (ready-players uni) (ready-foods uni) (ready-time-left uni))]))
-      (error-bundle uni world "name must be a string\n")))
+      (error-bundle uni world "name must be a string of the form '0123+4567'\n")))
 
 ;; iworld? -> player?
 ;; Create a new player at a random location
