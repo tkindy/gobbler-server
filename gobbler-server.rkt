@@ -6,7 +6,7 @@ exec racket -tm "$0" ${1+"$@"}
 
 (provide
  ;; PortNumber [N] -> Void
- ;; consumes the portnumber and optionally the number of game ticks 
+ ;; consumes the portnumber and optionally the number of game ticks
  ;; run as ./gobbler-server port-number [game-ticks]
  main)
 
@@ -221,11 +221,11 @@ waiting list.
 (define GAME-SIZE 600)
 (define CLOSE (/ GAME-SIZE 100))
 
-;; the message template to send a client if an unexpected message was received
-(define UNEXPECTED-MSG "unexpected message received by server in ~a state: ~s\n")
+(define OUTPUT "")
+(define OUTPUT-ENABLED? #f)
 
-;; world name regex
-(define WORLD-NAME-RE #rx"^\\d{4}+\\d{4}$")
+;; the message template to send a client if an unexpected message was received
+(define UNEXPECTED-MSG "unexpected message while in ~a state: ~s")
 
 ;; =====================================
 ;; SERVER
@@ -238,7 +238,11 @@ waiting list.
   (define the-port (if (string? p) (string->number p) p))
   (unless (and (number? the-port) (number? NUM-PLAYERS) (number? GAME-TICKS))
     (error 'gobbler-server "start with ./gobbler-server port-number [game-ticks]"))
-  (printf "running gobbler-server on port ~a for ~a ticks with ~a players\n" the-port GAME-TICKS NUM-PLAYERS)
+
+  (set! OUTPUT (format "out/output~a.txt" (current-seconds)))
+  (set! OUTPUT-ENABLED? #t)
+  (log-info (format "running gobbler-server on port ~a for ~a ticks with ~a players" the-port GAME-TICKS NUM-PLAYERS))
+
   (void
    (universe INITIAL-STATE
              [port          the-port]
@@ -284,12 +288,12 @@ waiting list.
 ;; GobblerUniverse iworld? -> GobblerUniverse
 ;; Remove player from the game
 (define (drop-world uni world)
-  ;; [Listof player?] -> 
+  ;; [Listof player?] -> [Listof player?]
   (define (drop-player* players)
     (drop-player players world))
   (define new-queue (drop-queued (game-queue uni) world))
   (printf "~s disconnected\n" (iworld-name world))
-  
+
   (cond
     [(waiting? uni)   (waiting new-queue)]
     [(countdown? uni) (countdown new-queue
@@ -329,13 +333,14 @@ waiting list.
     (if (>= (length q) NUM-PLAYERS)
         (let* ([dequeued (take q NUM-PLAYERS)]
                [players (map new-player dequeued)])
-          (printf "entering countdown\n")
-          (countdown (list-tail q NUM-PLAYERS)
+          (log-info "entering countdown")
+          (countdown (game-seen-players uni)
+                     (list-tail q NUM-PLAYERS)
                      players
                      (generate-food)
                      COUNTDOWN-TICKS))
         uni))
-  
+
   (cond
     [(waiting? new-uni)
      (let* ([waiting-msg (list WAITING
@@ -345,7 +350,7 @@ waiting list.
                        (game-queue new-uni))])
        (make-bundle new-uni mail '()))]
     [(countdown? new-uni) (ready-bundle new-uni)]))
-  
+
 
 ;; countdown? -> GobblerBundle
 ;; Advance the countdown state
@@ -362,7 +367,7 @@ waiting list.
                    (ready-players uni)
                    (ready-foods uni)
                    (sub1 (ready-time-left uni)))))
-  
+
   (ready-bundle new-uni))
 
 ;; ready? -> (U CountdownMessage PlayingMessage)
@@ -411,7 +416,7 @@ waiting list.
 ;; Build a food message
 (define (food-msg f)
   (list (posn-x f) (posn-y f)))
-    
+
 ;; playing? -> GobblerBundle
 ;; Move all the turkeys toward their goal and update the time left
 (define (advance-playing game)
@@ -430,7 +435,7 @@ waiting list.
   (define winners (choose-winners (ready-players game)))
   (define game-over-msg (list GAME-OVER winners))
   (define player-worlds (map player-iworld (ready-players game)))
-  
+
   (map (λ (world) (make-mail world game-over-msg))
        (append (game-queue game) player-worlds)))
 
@@ -565,7 +570,7 @@ waiting list.
 ;; -> GobblerBundle
 ;; Produce a bundle that sends the world an error message and disconnects from it
 (define (error-bundle uni world msg)
-  (printf msg)
+  (log-world "ERROR" (iworld-name world) msg)
   (make-bundle (drop-world uni world) (list (make-mail world msg)) (list world)))
 
 ;; GobblerUniverse -> symbol?
@@ -588,7 +593,7 @@ waiting list.
 ;; Update the waypoint of the player
 (define (update-waypoint/players players world waypoint-msg)
   (define waypoint (waypoint-message->posn waypoint-msg))
-  
+
   (if (on-screen? waypoint)
       (map (λ (p)
              (if (iworld=? (player-iworld p) world)
@@ -679,6 +684,45 @@ waiting list.
 
 
 ;; =====================================
+;; LOGGING
+;; =====================================
+
+;; string? string? string? -> Void
+;; Log the message pertaining to the world at the given severity
+(define (log-world sev name l)
+  (log-severity sev (format "<~a> ~a" name l)))
+
+;; string? -> Void
+;; Log the info message
+(define (log-info l)
+  (log-severity "INFO" l))
+
+;; string? -> Void
+;; Log the error message
+(define (log-error l)
+  (log-severity "ERROR" l))
+
+;; string? -> Void
+;; Log the admin message
+(define (log-admin l)
+  (log-severity "ADMIN" l))
+
+;; string? string? -> Void
+;; Log the message at the given severity
+(define (log-severity sev l)
+  (log (format "[~a] ~a~n" sev l)))
+
+;; string? -> Void
+;; Output the line to the file and STDOUT
+(define (log l)
+  (display l)
+  (when OUTPUT-ENABLED?
+    (let ([out (open-output-file OUTPUT #:exists 'append)])
+      (display l out)
+      (close-output-port out))))
+
+
+;; =====================================
 ;; TESTS
 ;; =====================================
 
@@ -701,19 +745,19 @@ waiting list.
   (define TURKEY0   (turkey POSN2 1 POSN3))
   (define TURKEY0.1 (turkey POSN2 1 POSN3.1))
   (define TURKEY0.2 (turkey POSN2.1 1 POSN3))
-    
+
   (define TURKEY1   (turkey POSN4 0 POSN4))
   (define TURKEY1.1 (turkey POSN4 1 POSN4))
-    
+
   (define TURKEY2   (turkey POSN5 0 POSN6))
   (define TURKEY2.1 (turkey POSN5 1 POSN6))
 
   (define PLAYER1   (player iworld1 TURKEY0))
   (define PLAYER1.1 (player iworld1 TURKEY0.1))
   (define PLAYER1.2 (player iworld1 TURKEY0.2))
-    
+
   (define PLAYER2   (player iworld2 TURKEY1))
-    
+
   (define PLAYER3   (player iworld3 TURKEY2))
 
   (define WAITING0   (waiting '()))
@@ -760,7 +804,7 @@ waiting list.
   (define players0.1 (list player-msg0.1 player-msg1))
 
   (define foods0 '((40 40) (100 30)))
-    
+
   (define msg-core '((("iworld1" 20 70 1)
                       ("iworld2" 45 50 0))
                      ((40 40) (100 30))))
@@ -776,15 +820,15 @@ waiting list.
     (list
      (make-mail iworld1 msg0)
      (make-mail iworld2 msg1)))
-    
+
   (define mails0 (mails msg0 msg1))
   (define mails1 (mails msg2 msg3))
   (define mails2 (mails msg4 msg5))
-    
+
   (define BUNDLE3 (make-bundle COUNTDOWN3 mails0 '()))
   (define BUNDLE4 (make-bundle PLAYING0 mails1 '()))
   (define BUNDLE5 (make-bundle PLAYING0.1 mails2 '()))
-  
+
   (define BUNDLE6
     (make-bundle
      PLAYING1.2
@@ -795,7 +839,7 @@ waiting list.
      WAITING0
      `(,(make-mail iworld1 (format UNEXPECTED-MSG "waiting" '(waypoint 30 20))))
      `(,iworld1)))
-  
+
   ;; =====================================
   ;; SERVER TESTS
   ;; =====================================
@@ -895,9 +939,9 @@ waiting list.
   (check-equal? (posn* 2 (posn 1 3)) (posn 2 6))
   (check-equal? (posn- (posn 3 2) (posn 3 8)) (posn 0 -6))
   (check-equal? (posn+ (posn 3 2) (posn 3 8)) (posn 6 10))
-  
+
   (check-true (andmap on-screen? (generate-food)))
-  
+
   "all tests run")
 
 ; (main 20000)
