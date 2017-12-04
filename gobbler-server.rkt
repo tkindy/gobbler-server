@@ -83,7 +83,7 @@ waiting list.
 
 (struct turkey [loc food-eaten waypoint] #:transparent)
 (struct player [iworld turkey] #:transparent)
-(struct game [queue] #:transparent)
+(struct game [seen-players queue] #:transparent)
 (struct waiting game [] #:transparent)
 (struct ready game [players foods time-left] #:transparent)
 (struct countdown ready [] #:transparent)
@@ -95,14 +95,16 @@ waiting list.
 ;; A Player is a (make-player iworld? turkey?)
 ;; - represents currently-playing player information
 
-;; A Game is a (game [Listof iworld?])
+;; A Game is a (game [Listof (cons string? number?)] [Listof iworld?])
 ;; represents the base state of the game
+;; - seen-players: the players seen so far and the number of games they've played
 ;; - queue: the players currently waiting to play
 
-;; A Waiting is a (waiting [Listof iworld?])
+;; A Waiting is a (waiting [Listof string?] [Listof iworld?])
 ;; represents the phase where not enough players have joined
 
-;; A Ready is a (ready [Listof iworld?]
+;; A Ready is a (ready [Listof string?]
+;;                     [Listof iworld?]
 ;;                     [Listof player?]
 ;;                     [Listof posn?]
 ;;                     N)
@@ -111,13 +113,15 @@ waiting list.
 ;; - foods: the locations of the foods
 ;; - time-left: the time left in this phase, in ticks
 
-;; A Countdown is a (countdown [Listof iworld?]
+;; A Countdown is a (countdown [Listof string?]
+;;                             [Listof iworld?]
 ;;                             [Listof player?]
 ;;                             [Listof posn?]
 ;;                             N)
 ;; represents the phase just before starting a new game
 
-;; A Playing is a (make-playing [Listof iworld?]
+;; A Playing is a (make-playing [Listof string?]
+;;                              [Listof iworld?]
 ;;                              [Listof player?]
 ;;                              [Listof posn?]
 ;;                              N)
@@ -216,13 +220,15 @@ waiting list.
 (define NUM-PLAYERS 2)
 (define MAX-FOODS NUM-PLAYERS)
 
-(define INITIAL-STATE (waiting '()))
+(define INITIAL-STATE (waiting '() '()))
 
 (define GAME-SIZE 600)
 (define CLOSE (/ GAME-SIZE 100))
 
 (define OUTPUT "")
 (define OUTPUT-ENABLED? #f)
+
+(define ADMIN-CLIENT "admin")
 
 ;; the message template to send a client if an unexpected message was received
 (define UNEXPECTED-MSG "unexpected message while in ~a state: ~s")
@@ -249,21 +255,45 @@ waiting list.
              [on-new        queue-world]
              [on-disconnect drop-world]
              [on-tick       advance-game (/ TICKS-PER-SECOND)]
-             [on-msg        receive-msg])))
+             [on-msg        receive-msg]
+             [state         #t])))
+
+;; GobblerUniverse iworld? -> GobblerBundle
+;; Sign up the new world
+(define (sign-up uni world)
+  (cond
+    [(not (string? (iworld-name world)))
+     (error-bundle uni world "name must be a string")]
+    [(eq? (iworld-name world) ADMIN-CLIENT)
+     (log-admin "connected")
+     uni]
+    [else
+     (queue-world uni world)]))
 
 ;; GobblerUniverse iworld? -> GobblerBundle
 ;; Queue the new player
 (define (queue-world uni world)
-  (printf "~s connected\n" (iworld-name world))
+  (log-world "INFO" (iworld-name world) "connected")
 
-  (if (and (string? (iworld-name world))
-           (regexp-match-exact? WORLD-NAME-RE (iworld-name world)))
-      (let ([nu-q (append (game-queue uni) (list world))])
-        (cond
-          [(waiting? uni) (waiting nu-q)]
-          [(countdown? uni) (countdown nu-q (ready-players uni) (ready-foods uni) (ready-time-left uni))]
-          [else (playing nu-q (ready-players uni) (ready-foods uni) (ready-time-left uni))]))
-      (error-bundle uni world "name must be a string of the form '0123+4567'\n")))
+  (let ([nu-q    (append (game-queue uni) (list world))]
+        [nu-seen (extend-seen-players (game-seen-players uni) (iworld-name world))])
+    (cond
+      [(waiting? uni)
+       (waiting nu-seen nu-q)]
+      [(countdown? uni)
+       (countdown nu-seen nu-q (ready-players uni) (ready-foods uni) (ready-time-left uni))]
+      [else
+       (playing nu-seen nu-q (ready-players uni) (ready-foods uni) (ready-time-left uni))])))
+
+;; [Listof string?] string? -> [Listof string?]
+;; Add the new player name to the list, checking if they had already connected before
+(define (extend-seen-players seen name)
+  (if (assq name seen)
+      (begin
+        (log-world "ERROR" name "!!!RECONNECT!!!")
+        seen)
+      (cons (cons name 0)
+            seen)))
 
 ;; iworld? -> player?
 ;; Create a new player at a random location
@@ -292,15 +322,23 @@ waiting list.
   (define (drop-player* players)
     (drop-player players world))
   (define new-queue (drop-queued (game-queue uni) world))
-  (printf "~s disconnected\n" (iworld-name world))
+  (define seen-entry (assq (iworld-name world) (game-seen-players uni)))
+
+  (if (boolean? seen-entry)
+      (log-world "ERROR" (iworld-name world) "No seen-players entry")
+      (if (and (not (playing? uni)) (eq? (cdr seen-entry) 1))
+          (log-world "INFO"  (iworld-name world) "!!!SUCCESS!!!")
+          (log-world "ERROR" (iworld-name world) "!!!BAD DISCONNECT!!!")))
 
   (cond
-    [(waiting? uni)   (waiting new-queue)]
-    [(countdown? uni) (countdown new-queue
+    [(waiting? uni)   (waiting (game-seen-players uni) new-queue)]
+    [(countdown? uni) (countdown (game-seen-players uni)
+                                 new-queue
                                  (drop-player* (ready-players uni))
                                  (ready-foods uni)
                                  (ready-time-left uni))]
-    [(playing? uni)   (playing new-queue
+    [(playing? uni)   (playing (game-seen-players uni)
+                               new-queue
                                (drop-player* (ready-players uni))
                                (ready-foods uni)
                                (ready-time-left uni))]))
@@ -358,12 +396,14 @@ waiting list.
   (define new-uni
     (if (<= (ready-time-left uni) 0)
         (begin
-          (printf "entering playing\n")
-          (playing (game-queue uni)
+          (log-info "entering playing")
+          (playing (game-seen-players uni)
+                   (game-queue uni)
                    (ready-players uni)
                    (ready-foods uni)
                    GAME-TICKS))
-        (countdown (game-queue uni)
+        (countdown (game-seen-players uni)
+                   (game-queue uni)
                    (ready-players uni)
                    (ready-foods uni)
                    (sub1 (ready-time-left uni)))))
@@ -420,10 +460,21 @@ waiting list.
 ;; playing? -> GobblerBundle
 ;; Move all the turkeys toward their goal and update the time left
 (define (advance-playing game)
+  ; TODO LOG OUT WINNER
+  ;; [Listof (cons string? boolean?)] [Listof player?]
+  ;; Update the seen list
+  (define (update-seen seen player-names)
+    (map (λ (entry)
+           (if (member (car entry) player-names)
+               (cons (car entry) (add1 (cdr entry)))
+               entry))
+         seen))
+
   (if (<= (ready-time-left game) 0)
       (let ([player-worlds (map player-iworld (ready-players game))])
-        (printf "entering waiting\n")
-        (make-bundle (waiting (append (game-queue game)
+        (log-info "entering waiting")
+        (make-bundle (waiting (update-seen (game-seen-players game) (map iworld-name player-worlds))
+                              (append (game-queue game)
                                       player-worlds))
                      (game-over-mails game)
                      '()))
@@ -474,6 +525,7 @@ waiting list.
      (ready-foods game)))
   (define new-uni
     (playing
+     (game-seen-players game)
      (game-queue game)
      (move-all-players (first new-data))
      (second new-data)
@@ -584,7 +636,8 @@ waiting list.
 ;; GobblerUniverse iworld? sexp? -> GobblerBundle
 ;; Update the waypoint of the player
 (define (update-waypoint uni world sexp)
-  (playing (game-queue uni)
+  (playing (game-seen-players uni)
+           (game-queue uni)
            (update-waypoint/players (ready-players uni) world sexp)
            (ready-foods uni)
            (ready-time-left uni)))
@@ -760,36 +813,57 @@ waiting list.
 
   (define PLAYER3   (player iworld3 TURKEY2))
 
-  (define WAITING0   (waiting '()))
-  (define WAITING1   (waiting `(,iworld1)))
-  (define WAITING2   (waiting `(,iworld1 ,iworld2)))
-  (define COUNTDOWN0 (countdown '() `(,PLAYER1 ,PLAYER2)
+  (define SEEN0 '())
+  (define SEEN1 (cons (cons "iworld1" 0)
+                      SEEN0))
+  (define SEEN1.1 (cons (cons "iworld1" 1)
+                        SEEN0))
+  (define SEEN2 (cons (cons "iworld2" 0)
+                      SEEN1))
+  (define SEEN2.1 (cons (cons "iworld2" 1)
+                        SEEN1.1))
+  (define SEEN3 (cons (cons "iworld3" 0)
+                      SEEN2))
+
+  (define WAITING0   (waiting SEEN0 '()))
+  (define WAITING1   (waiting SEEN1 `(,iworld1)))
+  (define WAITING1.1 (waiting SEEN1 '()))
+  (define WAITING2   (waiting SEEN2 `(,iworld1 ,iworld2)))
+  (define WAITING2.1 (waiting SEEN2.1 `(,iworld1 ,iworld2)))
+  (define COUNTDOWN0 (countdown SEEN2 '() `(,PLAYER1 ,PLAYER2)
                                 `(,POSN0 ,POSN1) COUNTDOWN-TICKS))
-  (define COUNTDOWN1 (countdown `(,iworld3) `(,PLAYER1 ,PLAYER2)
+  (define COUNTDOWN1 (countdown SEEN3 `(,iworld3)
+                                `(,PLAYER1 ,PLAYER2)
                                 `(,POSN0 ,POSN1) COUNTDOWN-TICKS))
-  (define COUNTDOWN2 (countdown `(,iworld3) `(,PLAYER2) `(,POSN0 ,POSN1)
+  (define COUNTDOWN1.1 (countdown SEEN3 '()
+                                  `(,PLAYER1 ,PLAYER2)
+                                  `(,POSN0 ,POSN1) COUNTDOWN-TICKS))
+  (define COUNTDOWN2 (countdown SEEN3 `(,iworld3)
+                                `(,PLAYER2) `(,POSN0 ,POSN1)
                                 COUNTDOWN-TICKS))
-  (define COUNTDOWN3 (countdown '() `(,PLAYER1 ,PLAYER2)
+  (define COUNTDOWN3 (countdown SEEN2 '() `(,PLAYER1 ,PLAYER2)
                                 `(,POSN0 ,POSN1) (- COUNTDOWN-TICKS 1)))
-  (define COUNTDOWN4 (countdown '() `(,PLAYER1 ,PLAYER2)
+  (define COUNTDOWN4 (countdown SEEN2 '() `(,PLAYER1 ,PLAYER2)
                                 `(,POSN0 ,POSN1) 0))
-  (define PLAYING0   (playing '() `(,PLAYER1 ,PLAYER2) `(,POSN0 ,POSN1)
-                              GAME-TICKS))
-  (define PLAYING0.1 (playing '() `(,PLAYER1.2 ,PLAYER2) `(,POSN0 ,POSN1)
+  (define PLAYING0   (playing SEEN2 '() `(,PLAYER1 ,PLAYER2)
+                              `(,POSN0 ,POSN1) GAME-TICKS))
+  (define PLAYING0.1 (playing SEEN2 '() `(,PLAYER1.2 ,PLAYER2) `(,POSN0 ,POSN1)
                               (- GAME-TICKS 1)))
-  (define PLAYING1   (playing `(,iworld3) `(,PLAYER1 ,PLAYER2)
+  (define PLAYING1   (playing SEEN3 `(,iworld3) `(,PLAYER1 ,PLAYER2)
                               `(,POSN0 ,POSN1) GAME-TICKS))
-  (define PLAYING1.1 (playing `(,iworld3) `(,PLAYER1.1 ,PLAYER2)
+  (define PLAYING1.1 (playing SEEN3`(,iworld3) `(,PLAYER1.1 ,PLAYER2)
                               `(,POSN0 ,POSN1) GAME-TICKS))
-  (define PLAYING1.2 (playing `(,iworld3) `(,PLAYER2)
+  (define PLAYING1.2 (playing SEEN3 `(,iworld3) `(,PLAYER2)
                               `(,POSN0 ,POSN1) GAME-TICKS))
-  (define PLAYING2   (playing `(,iworld3) `(,PLAYER2) `(,POSN0 ,POSN1)
+  (define PLAYING1.3 (playing SEEN3 '() `(,PLAYER1 ,PLAYER2)
+                              `(,POSN0 ,POSN1) GAME-TICKS))
+  (define PLAYING2   (playing SEEN3 `(,iworld3) `(,PLAYER2) `(,POSN0 ,POSN1)
                               GAME-TICKS))
-  (define PLAYING3   (playing '() `(,PLAYER1 ,PLAYER2) `(,POSN0 ,POSN1)
+  (define PLAYING3   (playing SEEN2 '() `(,PLAYER1 ,PLAYER2) `(,POSN0 ,POSN1)
                               0))
 
   (define BUNDLE0    (make-bundle
-                      WAITING2
+                      WAITING2.1
                       (list (make-mail iworld1 `(,GAME-OVER ("iworld1")))
                             (make-mail iworld2 `(,GAME-OVER ("iworld1"))))
                       '()))
@@ -836,7 +910,7 @@ waiting list.
      `(,iworld1)))
   (define BUNDLE7
     (make-bundle
-     WAITING0
+     WAITING1.1
      `(,(make-mail iworld1 (format UNEXPECTED-MSG "waiting" '(waypoint 30 20))))
      `(,iworld1)))
 
@@ -848,9 +922,9 @@ waiting list.
   (check-equal? (queue-world COUNTDOWN0 iworld3) COUNTDOWN1)
   (check-equal? (queue-world PLAYING0 iworld3) PLAYING1)
 
-  (check-equal? (drop-world WAITING1 iworld1) WAITING0)
-  (check-equal? (drop-world COUNTDOWN1 iworld3) COUNTDOWN0)
-  (check-equal? (drop-world PLAYING1 iworld3) PLAYING0)
+  (check-equal? (drop-world WAITING1 iworld1) WAITING1.1)
+  (check-equal? (drop-world COUNTDOWN1 iworld3) COUNTDOWN1.1)
+  (check-equal? (drop-world PLAYING1 iworld3) PLAYING1.3)
 
   (check-equal? (drop-world COUNTDOWN1 iworld1) COUNTDOWN2)
   (check-equal? (drop-world PLAYING1 iworld1) PLAYING2)
