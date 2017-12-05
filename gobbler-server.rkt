@@ -704,7 +704,8 @@ waiting list.
                                  (format "!!!BAD DISCONNECT!!! ~a" msg))
                       (make-mail w (format "~a~n" msg)))
                     (game-queue uni)))
-  
+
+  (set! OUTPUT (format "out/output~a.txt" (current-seconds)))
   (make-bundle (waiting (game-admin uni)
                         '()
                         '())

@@ -19,9 +19,12 @@
 (define ADMIN-CLIENT "admin")
 (define PORT 20000)
 
+(define FOOD-SIZE 10)
+(define PLAYER-BASE-SIZE 10)
+
 (define SIZE 0)
 (define BACKGROUND null)
-(define FOOD-IMG (square 5 'solid 'green))
+(define FOOD-IMG (square FOOD-SIZE 'solid 'green))
 
 ;; IPAddr N -> AdminState
 ;; Run the admin client
@@ -42,9 +45,12 @@
 (define (build-key-handler size)
   (λ (s key)
     (match key
-      [" " (make-package s 'go)]
-      ["s" (make-package s `(size ,size))]
-      ["d" (make-package s 'drop)]
+      [" " (printf "starting game\n")
+           (make-package s 'go)]
+      ["s" (printf "updating size to ~a~n" size)
+           (make-package s `(size ,size))]
+      ["d" (printf "dropping leftover worlds\n")
+           (make-package s 'drop)]
       [_ s])))
 
 ;; AdminState -> Image
@@ -99,7 +105,7 @@
   ;; N -> Image
   ;; Draw the player having eaten n foods
   (define (player-img n)
-    (circle (+ 5 n) 'solid 'yellow))
+    (circle (+ PLAYER-BASE-SIZE n) 'solid 'yellow))
   ;; PlayerMessage Image -> Image
   ;; Draw the player on the image
   (define (render-player player img)
