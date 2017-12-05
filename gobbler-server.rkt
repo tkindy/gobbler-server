@@ -348,9 +348,9 @@ waiting list.
   (posn (random GAME-SIZE)
         (random GAME-SIZE)))
 
-;; GobblerUniverse iworld? -> GobblerUniverse
+;; GobblerUniverse iworld? boolean? -> GobblerUniverse
 ;; Remove player from the game
-(define (drop-world uni world)
+(define (drop-world uni world (too-long? #f))
   ;; [Listof player?] -> [Listof player?]
   (define (drop-player* players)
     (drop-player players world))
@@ -359,7 +359,7 @@ waiting list.
 
   (if (boolean? seen-entry)
       (log-world "ERROR" (iworld-name world) "No seen-players entry")
-      (if (and (not (playing? uni)) (equal? (cdr seen-entry) 1))
+      (if (and (not too-long?) (not (playing? uni)) (equal? (cdr seen-entry) 1))
           (log-world "INFO"  (iworld-name world) "!!!SUCCESS!!!")
           (log-world "ERROR" (iworld-name world) "!!!BAD DISCONNECT!!!")))
 
@@ -670,14 +670,16 @@ waiting list.
     (make-bundle uni
                  `(,(make-mail world (format "~a~n" msg)))
                  '()))
-  (match sexp
-    [`(size ,(? real? s)) (set! GAME-SIZE s)
-                          (log-admin (format "set size to ~a" GAME-SIZE))
-                          uni]
-    ['go (if (waiting? uni)
-             (start-game uni)
-             (admin-error (format "Can't start; ~a" (universe-state uni))))]
-    [_ (admin-error (format "Unknown command: ~a" sexp))]))
+  
+  (if (waiting? uni)
+      (match sexp
+        [`(size ,(? real? s)) (set! GAME-SIZE s)
+                              (log-admin (format "set size to ~a" GAME-SIZE))
+                              uni]
+        ['go (start-game uni)]
+        ['drop (drop-remaining-worlds uni)]
+        [_ (admin-error (format "Unknown command: ~a" sexp))])
+      (admin-error (format "Can't alter server configuration; ~a" (universe-state uni)))))
 
 ;; waiting? -> GobblerUniverse
 ;; Start the game with all the players
@@ -689,6 +691,25 @@ waiting list.
              (map new-player (game-queue uni))
              (generate-food)
              COUNTDOWN-TICKS))
+
+;; waiting? -> GobblerUniverse
+;; Drop the rest of the worlds that haven't gracefully disconnected already
+(define (drop-remaining-worlds uni)
+  (log-admin "dropping overdue worlds")
+  
+  (define msg "took too long to disconnect")
+  (define mail (map (λ (w)
+                      (log-world "ERROR"
+                                 (iworld-name w)
+                                 (format "!!!BAD DISCONNECT!!! ~a" msg))
+                      (make-mail w (format "~a~n" msg)))
+                    (game-queue uni)))
+  
+  (make-bundle (waiting (game-admin uni)
+                        '()
+                        '())
+               mail
+               (game-queue uni)))
 
 ;; GobblerUniverse iworld? sexp? -> GobblerBundle
 ;; Update the waypoint of the player

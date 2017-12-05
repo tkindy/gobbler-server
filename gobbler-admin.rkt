@@ -41,6 +41,7 @@
     (match key
       [" " (make-package state 'go)]
       ["s" (make-package state `(size ,size))]
+      ["d" (make-package state 'drop)]
       [_ state])))
 
 ;; AdminState -> Image
