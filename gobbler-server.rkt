@@ -883,7 +883,7 @@ waiting list.
                             (make-mail iworld2 `(,GAME-OVER ("iworld1"))))
                       '()))
   (define BUNDLE1    (make-bundle WAITING0 '() '()))
-  (define BUNDLE2    (make-bundle WAITING1 `(,(make-mail iworld1 '(waiting 1 2))) '()))
+  (define BUNDLE2    (make-bundle WAITING1 `(,(make-mail iworld1 `(waiting 1 ,NUM-PLAYERS))) '()))
 
   (define player-msg0   '("iworld1" 20 70 1))
   (define player-msg0.1 '("iworld1" 26 62 1))
