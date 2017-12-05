@@ -230,9 +230,10 @@ waiting list.
 
 (define (main p (ps NUM-PLAYERS) (gt GAME-TICKS))
   (set! NUM-PLAYERS (if (string? ps) (string->number ps) ps))
+  (set! MAX-FOODS NUM-PLAYERS)
   (set! GAME-TICKS (if (string? gt) (string->number gt) gt))
   (define the-port (if (string? p) (string->number p) p))
-  (unless (and (number? the-port) (number? GAME-TICKS))
+  (unless (and (number? the-port) (number? NUM-PLAYERS) (number? GAME-TICKS))
     (error 'gobbler-server "start with ./gobbler-server port-number [game-ticks]"))
   (printf "running gobbler-server on port ~a for ~a ticks with ~a players\n" the-port GAME-TICKS NUM-PLAYERS)
   (void
