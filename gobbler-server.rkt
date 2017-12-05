@@ -221,8 +221,7 @@ waiting list.
 (define TICKS-PER-SECOND 28)
 (define COUNTDOWN-TICKS (seconds->ticks 3))
 (define GAME-TICKS (seconds->ticks 60))
-(define NUM-PLAYERS 0)
-(define MAX-FOODS 2)
+(define MAX-FOODS 10)
 
 (define INITIAL-STATE (waiting '() '()))
 
@@ -241,9 +240,7 @@ waiting list.
 ;; SERVER
 ;; =====================================
 
-(define (main p (ps NUM-PLAYERS) (gt GAME-TICKS))
-  (set! NUM-PLAYERS (if (string? ps) (string->number ps) ps))
-  (set! MAX-FOODS NUM-PLAYERS)
+(define (main p (gt GAME-TICKS))
   (set! GAME-TICKS (if (string? gt) (string->number gt) gt))
   (define the-port (if (string? p) (string->number p) p))
   (unless (and (number? the-port) (number? NUM-PLAYERS) (number? GAME-TICKS))
@@ -251,12 +248,12 @@ waiting list.
 
   (set! OUTPUT (format "out/output~a.txt" (current-seconds)))
   (set! OUTPUT-ENABLED? #t)
-  (log-info (format "running gobbler-server on port ~a for ~a ticks with ~a players" the-port GAME-TICKS NUM-PLAYERS))
+  (log-info (format "running gobbler-server on port ~a for ~a ticks" the-port GAME-TICKS))
 
   (void
    (universe INITIAL-STATE
              [port          the-port]
-             [on-new        queue-world]
+             [on-new        sign-up]
              [on-disconnect drop-world]
              [on-tick       advance-game (/ TICKS-PER-SECOND)]
              [on-msg        receive-msg]
@@ -278,7 +275,7 @@ waiting list.
 ;; Is this world the admin?
 (define (admin? world)
   (equal? (iworld-name world)
-       ADMIN-CLIENT))
+          ADMIN-CLIENT))
 
 ;; GobblerUniverse iworld? -> GobblerUniverse
 ;; Queue the new player
@@ -378,7 +375,7 @@ waiting list.
 (define (advance-waiting uni)
   (let* ([waiting-msg (list WAITING
                             (length (game-queue uni))
-                            NUM-PLAYERS)]
+                            0)]
          [mail (map (λ (w) (make-mail w waiting-msg))
                     (game-queue uni))])
     (make-bundle uni mail '())))
@@ -628,15 +625,17 @@ waiting list.
 ;; GobblerUniverse iworld? sexp? -> GobblerBundle
 ;; Handle the admin message
 (define (administrate uni world sexp)
+  (define (admin-error msg)
+    (make-bundle uni
+                 `(,(make-mail world msg))
+                 '()))
   (match sexp
     [`(size ,(? real? s)) (set! GAME-SIZE s)
                           uni]
     ['go (if (waiting? uni)
              (start-game uni)
-             (make-bundle uni
-                          `(,(make-mail world
-                                        (format "Can't start; ~a" (universe-state uni))))
-                          '()))]))
+             (admin-error (format "Can't start; ~a~n" (universe-state uni))))]
+    [_ (admin-error (format "Unknown command: ~a~n" sexp))]))
 
 ;; waiting? -> GobblerUniverse
 ;; Start the game with all the players
@@ -883,7 +882,7 @@ waiting list.
                             (make-mail iworld2 `(,GAME-OVER ("iworld1"))))
                       '()))
   (define BUNDLE1    (make-bundle WAITING0 '() '()))
-  (define BUNDLE2    (make-bundle WAITING1 `(,(make-mail iworld1 `(waiting 1 ,NUM-PLAYERS))) '()))
+  (define BUNDLE2    (make-bundle WAITING1 `(,(make-mail iworld1 '(waiting 1 0))) '()))
 
   (define player-msg0   '("iworld1" 20 70 1))
   (define player-msg0.1 '("iworld1" 26 62 1))
