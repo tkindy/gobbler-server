@@ -18,6 +18,7 @@
 
 (define SIZE 0)
 (define BACKGROUND null)
+(define FOOD-IMG (square 5 'solid 'green))
 
 ;; IPAddr N -> AdminState
 ;; Run the admin client
@@ -46,7 +47,7 @@
 ;; Draw the world
 (define (render state)
   (match state
-    [`(waiting ,num-players, _)
+    [`(waiting ,num-players ,_)
      (render-waiting num-players)]
     [`(,(or 'countdown 'playing) ,players ,foods ,ticks ,_)
      (render-ready players foods ticks)]
@@ -65,7 +66,48 @@
 ;; [Listof PlayerMessage] [Listof FoodMessage] N -> Image
 ;; Render a ready state
 (define (render-ready players foods ticks)
-  BACKGROUND)
+  (let* ([+foods (render-foods foods BACKGROUND)]
+         [+players (render-players players +foods)]
+         [+timer   (render-timer ticks +players)])
+    +timer))
+
+;; [Listof FoodMessage] Image -> Image
+;; Draw the foods on the image
+(define (render-foods foods img)
+  (foldr (λ (f i)
+           (place-image FOOD-IMG
+                        (first f)
+                        (second f)
+                        i))
+         img
+         foods))
+
+;; [Listof PlayerMessage] Image -> Image
+;; Draw the players on the image
+(define (render-players players img)
+  ;; N -> Image
+  ;; Draw the player having eaten n foods
+  (define (player-img n)
+    (circle (+ 5 n) 'solid 'yellow))
+  ;; PlayerMessage Image -> Image
+  ;; Draw the player on the image
+  (define (render-player player img)
+    (let* ([x (second player)]
+           [y (third player)]
+           [pi (player-img (fourth player))]
+           [+pi (place-image pi x y img)]
+           [name (text (first player) 16 'black)]
+           [+name (place-image name x y +pi)])
+      +name))
+     
+  (foldr render-player img players))
+
+;; N Image -> Image
+;; Draw the timer on the image
+(define (render-timer ticks img)
+  (let* ([timer (text (number->string ticks) 16 'black)]
+         [+timer (place-image timer 25 25 img)])
+    +timer))
 
 ;; AdminState sexp? -> AdminState
 (define (receive-msg state sexp)

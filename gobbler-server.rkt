@@ -307,10 +307,9 @@ waiting list.
 ;; GobblerUniverse iworld? -> GobblerUniverse
 ;; Queue the new player
 (define (queue-world uni world)
-  (log-world "INFO" (iworld-name world) (format "connected (~a)" (length (game-queue uni))))
-
   (let ([nu-q    (append (game-queue uni) (list world))]
         [nu-seen (extend-seen-players (game-seen-players uni) (iworld-name world))])
+    (log-world "INFO" (iworld-name world) (format "connected (~a)" (length nu-q)))
     (cond
       [(waiting? uni)
        (waiting (game-admin uni) nu-seen nu-q)]
@@ -322,7 +321,7 @@ waiting list.
 ;; [Listof string?] string? -> [Listof string?]
 ;; Add the new player name to the list, checking if they had already connected before
 (define (extend-seen-players seen name)
-  (if (assq name seen)
+  (if (assoc name seen)
       (begin
         (log-world "ERROR" name "!!!RECONNECT!!!")
         seen)
@@ -356,7 +355,7 @@ waiting list.
   (define (drop-player* players)
     (drop-player players world))
   (define new-queue (drop-queued (game-queue uni) world))
-  (define seen-entry (assq (iworld-name world) (game-seen-players uni)))
+  (define seen-entry (assoc (iworld-name world) (game-seen-players uni)))
 
   (if (boolean? seen-entry)
       (log-world "ERROR" (iworld-name world) "No seen-players entry")
@@ -513,6 +512,8 @@ waiting list.
 ;; Produce the mails to send to the players after the game is over
 (define (game-over-mails game)
   (define winners (choose-winners (ready-players game)))
+  (log-info (format "~a win!" winners))
+  
   (define game-over-msg (list GAME-OVER winners))
   (define player-worlds (map player-iworld (ready-players game)))
 
