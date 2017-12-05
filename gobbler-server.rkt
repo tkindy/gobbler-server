@@ -548,15 +548,12 @@ waiting list.
 ;; GobblerUniverse iworld? sexp? -> GobblerBundle
 ;; Handle a message received from a client
 (define (receive-msg uni world sexp)
-  [define state (universe-state uni)]
-  [define (error-bundle*) (error-bundle uni world (format UNEXPECTED-MSG state sexp))]
-  (cond
-    [(waiting? uni)   (error-bundle*)]
-    [(countdown? uni) (error-bundle*)]
-    [(playing? uni)
-     (if (waypoint-message? sexp)
-         (update-waypoint uni world sexp)
-         (error-bundle*))]))
+  (if (waypoint-message? sexp)
+      (cond
+        [(waiting? uni)   uni]
+        [(countdown? uni) uni]
+        [(playing? uni) (update-waypoint uni world sexp)])
+      (error-bundle uni world (format UNEXPECTED-MSG (universe-state uni) sexp))))
 
 
 ;; -> GobblerBundle
@@ -832,8 +829,6 @@ waiting list.
                 BUNDLE6)
   (check-equal? (receive-msg PLAYING1 iworld3 '(waypoint 30 20))
                 PLAYING1)
-  (check-equal? (receive-msg WAITING1 iworld1 '(waypoint 30 20))
-                BUNDLE7)
   (check-equal? (receive-msg PLAYING1 iworld1 '(waypoint -1000 -1000))
                 PLAYING1)
   (check-equal? (receive-msg PLAYING1 iworld1 '(waypoint 30 20))
