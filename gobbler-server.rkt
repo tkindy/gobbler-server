@@ -92,7 +92,7 @@ waiting list.
 ;; A Turkey is a (turkey posn? N [Maybe posn?])
 ;; - represents a playable turkey
 
-;; A Player is a (make-player iworld? turkey?)
+;; A Player is a (player iworld? turkey?)
 ;; - represents currently-playing player information
 
 ;; A Game is a (game [Listof (cons string? number?)] [Listof iworld?])
@@ -204,6 +204,10 @@ waiting list.
 ;; - the first number is the x coordinate
 ;; - the second number is the y coordinate
 
+;; An Admin2ServerMessage is one of:
+;; - (list 'size N)  ; set the size of the play area
+;; - 'go             ; start the game
+
 ;; N -> N
 ;; Convert seconds to game ticks
 (define (seconds->ticks s)
@@ -217,13 +221,13 @@ waiting list.
 (define TICKS-PER-SECOND 28)
 (define COUNTDOWN-TICKS (seconds->ticks 3))
 (define GAME-TICKS (seconds->ticks 60))
-(define NUM-PLAYERS 2)
-(define MAX-FOODS NUM-PLAYERS)
+(define NUM-PLAYERS 0)
+(define MAX-FOODS 2)
 
 (define INITIAL-STATE (waiting '() '()))
 
 (define GAME-SIZE 600)
-(define CLOSE (/ GAME-SIZE 100))
+(define CLOSE 6)
 
 (define OUTPUT "")
 (define OUTPUT-ENABLED? #f)
@@ -264,13 +268,19 @@ waiting list.
   (cond
     [(not (string? (iworld-name world)))
      (error-bundle uni world "name must be a string")]
-    [(eq? (iworld-name world) ADMIN-CLIENT)
+    [(admin? world)
      (log-admin "connected")
      uni]
     [else
      (queue-world uni world)]))
 
-;; GobblerUniverse iworld? -> GobblerBundle
+;; iworld? -> boolean?
+;; Is this world the admin?
+(define (admin? world)
+  (eq? (iworld-name world)
+       ADMIN-CLIENT))
+
+;; GobblerUniverse iworld? -> GobblerUniverse
 ;; Queue the new player
 (define (queue-world uni world)
   (log-world "INFO" (iworld-name world) "connected")
@@ -366,29 +376,12 @@ waiting list.
 ;; waiting? -> GobblerBundle
 ;; Advance the waiting state
 (define (advance-waiting uni)
-  (define q (game-queue uni))
-  (define new-uni
-    (if (>= (length q) NUM-PLAYERS)
-        (let* ([dequeued (take q NUM-PLAYERS)]
-               [players (map new-player dequeued)])
-          (log-info "entering countdown")
-          (countdown (game-seen-players uni)
-                     (list-tail q NUM-PLAYERS)
-                     players
-                     (generate-food)
-                     COUNTDOWN-TICKS))
-        uni))
-
-  (cond
-    [(waiting? new-uni)
-     (let* ([waiting-msg (list WAITING
-                               (length (game-queue new-uni))
-                               NUM-PLAYERS)]
-            [mail (map (λ (w) (make-mail w waiting-msg))
-                       (game-queue new-uni))])
-       (make-bundle new-uni mail '()))]
-    [(countdown? new-uni) (ready-bundle new-uni)]))
-
+  (let* ([waiting-msg (list WAITING
+                            (length (game-queue uni))
+                            NUM-PLAYERS)]
+         [mail (map (λ (w) (make-mail w waiting-msg))
+                    (game-queue uni))])
+    (make-bundle uni mail '())))
 
 ;; countdown? -> GobblerBundle
 ;; Advance the countdown state
@@ -611,15 +604,14 @@ waiting list.
 ;; GobblerUniverse iworld? sexp? -> GobblerBundle
 ;; Handle a message received from a client
 (define (receive-msg uni world sexp)
-  (if (waypoint-message? sexp)
-      (cond
-        [(waiting? uni)   uni]
-        [(countdown? uni) uni]
-        [(playing? uni) (update-waypoint uni world sexp)])
-      (error-bundle uni world (format UNEXPECTED-MSG (universe-state uni) sexp))))
+  (cond
+    [(admin? world) (administrate uni world sexp)]
+    [(not (waypoint-message? sexp)) (error-bundle uni world (format UNEXPECTED-MSG (universe-state uni) sexp))]
+    [(waiting? uni)   uni]
+    [(countdown? uni) uni]
+    [(playing? uni) (update-waypoint uni world sexp)]))
 
-
-;; -> GobblerBundle
+;; GobblerUniverse iworld? string? -> GobblerBundle
 ;; Produce a bundle that sends the world an error message and disconnects from it
 (define (error-bundle uni world msg)
   (log-world "ERROR" (iworld-name world) msg)
@@ -632,6 +624,29 @@ waiting list.
     [(waiting? uni)   WAITING]
     [(countdown? uni) COUNTDOWN]
     [(playing? uni)   PLAYING]))
+
+;; GobblerUniverse iworld? sexp? -> GobblerBundle
+;; Handle the admin message
+(define (administrate uni world sexp)
+  (match sexp
+    [`(size ,(? real? s)) (set! GAME-SIZE s)
+                          uni]
+    ['go (if (waiting? uni)
+             (start-game uni)
+             (make-bundle uni
+                          `(,(make-mail world
+                                        (format "Can't start; ~a" (universe-state uni))))
+                          '()))]))
+
+;; waiting? -> GobblerUniverse
+;; Start the game with all the players
+(define (start-game uni)
+  (log-info "entering countdown")
+  (countdown (game-seen-players uni)
+             '()
+             (map new-player (game-queue uni))
+             (generate-food)
+             COUNTDOWN-TICKS))
 
 ;; GobblerUniverse iworld? sexp? -> GobblerBundle
 ;; Update the waypoint of the player
