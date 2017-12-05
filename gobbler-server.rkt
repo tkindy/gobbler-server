@@ -261,7 +261,7 @@ waiting list.
              [on-disconnect drop-world]
              [on-tick       advance-game (/ TICKS-PER-SECOND)]
              [on-msg        receive-msg]
-             [state         #t])))
+             [state         #f])))
 
 ;; GobblerUniverse iworld? -> GobblerBundle
 ;; Sign up the new world

@@ -1,4 +1,4 @@
-#lang htdp/isl+
+#lang htdp/asl
 
 (require "provide.rkt")
 
@@ -89,7 +89,7 @@
   (big-bang (list (list handle 0 0 0) "dummy message")
             (to-draw    (render color))
             (on-receive incoming)
-            (stop-when  game-over? (render-over color))
+            (stop-when  game-over?)
             (name       handle)
             (register   where)
             (port       GOBBLER-PORT)))
@@ -169,7 +169,7 @@
          [`(,(? (is? COUNTDOWN)) ,others ,foods ,n ,me) (render-helper others foods n me my-color)]
          [`(,(? (is? PLAYING))   ,others ,foods ,n ,me) (render-helper others foods n me my-color)]
          [`(,(? (is? GAME-OVER)) s)                     (render-over s)]
-         [_                                             BACKGROUND])])))
+         [else                                          BACKGROUND])])))
 
 ;; N N -> Image 
 (define (render-waiting p# min)
@@ -180,14 +180,11 @@
           (define txt (above (text msg1 22 TEXT-COLOR) (text msg2 22 TEXT-COLOR))))
     (place-image txt 22 44 BACKGROUND)))
 
-;; ColorString -> [State -> Image]
-(define (render-over my-color)
-  (lambda (s)
-    (match s 
-      [`(,me (,(? (is? GAME-OVER)) ,s))
-       (local ((define txts
+;; [Listof String] -> Image
+(define (render-over my-color s)
+  (local ((define txts
                  (foldr (λ (n img) (above (text n TEXT-SIZE TEXT-COLOR) img)) empty-image s)))
-         (place-image txts (/ SIZE 2) (/ SIZE 2) BACKGROUND))])))
+         (place-image txts (/ SIZE 2) (/ SIZE 2) BACKGROUND)))
 
 ;; [Listof TurkeyMessage] [Listof FoodMessage] N [Maybe TurkeyMessage] ColorString -> Image
 (define (render-helper others food n me my-color)
@@ -251,3 +248,10 @@
       (launch-many-worlds (main GOBBLER-SERVER "christopher" CF)
                           (main GOBBLER-SERVER "matthias"    MF)
                           (main GOBBLER-SERVER "matthias"    SF))))
+
+(define (start-many n where)
+  (local ((define worlds (build-list n (lambda (i) (lambda () (main where (format "mf ~a" i) CF))))))
+    (apply launch-many-worlds/proc worlds)))
+
+
+
