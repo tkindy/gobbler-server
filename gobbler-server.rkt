@@ -234,7 +234,7 @@ waiting list.
   (define the-port (if (string? p) (string->number p) p))
   (unless (and (number? the-port) (number? GAME-TICKS))
     (error 'gobbler-server "start with ./gobbler-server port-number [game-ticks]"))
-  (printf "running gobbler-server on port ~a for ~a ticks\n" the-port GAME-TICKS)
+  (printf "running gobbler-server on port ~a for ~a ticks with ~a players\n" the-port GAME-TICKS NUM-PLAYERS)
   (void
    (universe INITIAL-STATE
              [port          the-port]
