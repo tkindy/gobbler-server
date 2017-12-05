@@ -46,9 +46,9 @@
 ;; Draw the world
 (define (render state)
   (match state
-    [`(waiting ,num-players _)
+    [`(waiting ,num-players, _)
      (render-waiting num-players)]
-    [`(,(or 'countdown 'playing) ,players ,foods ,ticks _)
+    [`(,(or 'countdown 'playing) ,players ,foods ,ticks ,_)
      (render-ready players foods ticks)]
     [_ BACKGROUND]))
 
