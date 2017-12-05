@@ -518,7 +518,7 @@ waiting list.
   (define player-worlds (map player-iworld (ready-players game)))
 
   (map (λ (world) (make-mail world game-over-msg))
-       (append (game-queue game) player-worlds)))
+       (append (non-players game) player-worlds)))
 
 ;; [Listof player?] -> [Listof string?]
 ;; Pick the player(s) who ate the most food

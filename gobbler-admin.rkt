@@ -3,7 +3,10 @@
 (require 2htdp/image)
 (require 2htdp/universe)
 
-;; An AdminState is a Server2ClientMessage
+(struct state [msg winners] #:transparent)
+;; An AdminState is a (state Server2ClientMessage [Listof string?])
+;; - msg: the last message received from the server
+;; - winners: the winners of the last game
 
 ;; An AdminMessage is one of:
 ;; - '(size N)
@@ -26,7 +29,7 @@
   (set! SIZE size)
   (set! BACKGROUND (empty-scene SIZE SIZE))
   
-  (big-bang '()
+  (big-bang (state '() '())
     [on-key     (build-key-handler size)]
     [to-draw    render]
     [on-receive receive-msg]
@@ -37,27 +40,34 @@
 ;; N -> (AdminState KeyEvent -> HandlerResult)
 ;; Build the key handler
 (define (build-key-handler size)
-  (λ (state key)
+  (λ (s key)
     (match key
-      [" " (make-package state 'go)]
-      ["s" (make-package state `(size ,size))]
-      ["d" (make-package state 'drop)]
-      [_ state])))
+      [" " (make-package s 'go)]
+      ["s" (make-package s `(size ,size))]
+      ["d" (make-package s 'drop)]
+      [_ s])))
 
 ;; AdminState -> Image
 ;; Draw the world
-(define (render state)
-  (match state
+(define (render s)
+  (match (state-msg s)
     [`(waiting ,num-players ,_)
-     (render-waiting num-players)]
+     (render-waiting num-players (state-winners s))]
     [`(,(or 'countdown 'playing) ,players ,foods ,ticks ,_)
      (render-ready players foods ticks)]
     [_ BACKGROUND]))
 
-;; N -> Image
+;; N [Listof string?] -> Image
 ;; Render the waiting state
-(define (render-waiting num-players)
-  (place-image (text (format "~a players waiting" num-players)
+(define (render-waiting num-players winners)
+  (define winners-str
+    (if (cons? winners)
+        (foldr (λ (n s)
+                 (string-append s "\n" n))
+               (first winners)
+               (rest winners))
+        ""))
+  (place-image (text (format "~a players waiting~n~a" num-players winners-str)
                      24
                      'black)
                (/ SIZE 2)
@@ -111,5 +121,10 @@
     +timer))
 
 ;; AdminState sexp? -> AdminState
-(define (receive-msg state sexp)
-  sexp)
+(define (receive-msg s sexp)
+  (define new-winners
+    (match sexp
+      [`(game-over ,winners) winners]
+      [_ (state-winners s)]))
+  
+  (state sexp new-winners))
