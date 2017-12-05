@@ -277,7 +277,7 @@ waiting list.
 ;; iworld? -> boolean?
 ;; Is this world the admin?
 (define (admin? world)
-  (eq? (iworld-name world)
+  (equal? (iworld-name world)
        ADMIN-CLIENT))
 
 ;; GobblerUniverse iworld? -> GobblerUniverse
@@ -336,7 +336,7 @@ waiting list.
 
   (if (boolean? seen-entry)
       (log-world "ERROR" (iworld-name world) "No seen-players entry")
-      (if (and (not (playing? uni)) (eq? (cdr seen-entry) 1))
+      (if (and (not (playing? uni)) (equal? (cdr seen-entry) 1))
           (log-world "INFO"  (iworld-name world) "!!!SUCCESS!!!")
           (log-world "ERROR" (iworld-name world) "!!!BAD DISCONNECT!!!")))
 
