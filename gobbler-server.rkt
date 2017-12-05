@@ -83,7 +83,7 @@ waiting list.
 
 (struct turkey [loc food-eaten waypoint] #:transparent)
 (struct player [iworld turkey] #:transparent)
-(struct game [seen-players queue] #:transparent)
+(struct game [admin seen-players queue] #:transparent)
 (struct waiting game [] #:transparent)
 (struct ready game [players foods time-left] #:transparent)
 (struct countdown ready [] #:transparent)
@@ -95,15 +95,17 @@ waiting list.
 ;; A Player is a (player iworld? turkey?)
 ;; - represents currently-playing player information
 
-;; A Game is a (game [Listof (cons string? number?)] [Listof iworld?])
+;; A Game is a (game [Maybe iworld?] [Listof (cons string? number?)] [Listof iworld?])
 ;; represents the base state of the game
+;; - admin: the admin world, if connected
 ;; - seen-players: the players seen so far and the number of games they've played
 ;; - queue: the players currently waiting to play
 
-;; A Waiting is a (waiting [Listof string?] [Listof iworld?])
+;; A Waiting is a (waiting [Maybe iworld?] [Listof string?] [Listof iworld?])
 ;; represents the phase where not enough players have joined
 
-;; A Ready is a (ready [Listof string?]
+;; A Ready is a (ready [Maybe iworld?]
+;;                     [Listof (cons string? number?)]
 ;;                     [Listof iworld?]
 ;;                     [Listof player?]
 ;;                     [Listof posn?]
@@ -113,14 +115,16 @@ waiting list.
 ;; - foods: the locations of the foods
 ;; - time-left: the time left in this phase, in ticks
 
-;; A Countdown is a (countdown [Listof string?]
+;; A Countdown is a (countdown [Maybe iworld?]
+;;                             [Listof (cons string? number?)]
 ;;                             [Listof iworld?]
 ;;                             [Listof player?]
 ;;                             [Listof posn?]
 ;;                             N)
 ;; represents the phase just before starting a new game
 
-;; A Playing is a (make-playing [Listof string?]
+;; A Playing is a (make-playing [Maybe iworld?]
+;;                              [Listof (cons string? number?)]
 ;;                              [Listof iworld?]
 ;;                              [Listof player?]
 ;;                              [Listof posn?]
@@ -223,7 +227,7 @@ waiting list.
 (define GAME-TICKS (seconds->ticks 60))
 (define MAX-FOODS 10)
 
-(define INITIAL-STATE (waiting '() '()))
+(define INITIAL-STATE (waiting #f '() '()))
 
 (define GAME-SIZE 600)
 (define CLOSE 6)
@@ -243,7 +247,7 @@ waiting list.
 (define (main p (gt GAME-TICKS))
   (set! GAME-TICKS (if (string? gt) (string->number gt) gt))
   (define the-port (if (string? p) (string->number p) p))
-  (unless (and (number? the-port) (number? NUM-PLAYERS) (number? GAME-TICKS))
+  (unless (and (number? the-port) (number? GAME-TICKS))
     (error 'gobbler-server "start with ./gobbler-server port-number [game-ticks]"))
 
   (set! OUTPUT (format "out/output~a.txt" (current-seconds)))
@@ -267,7 +271,7 @@ waiting list.
      (error-bundle uni world "name must be a string")]
     [(admin? world)
      (log-admin "connected")
-     uni]
+     (add-admin uni world)]
     [else
      (queue-world uni world)]))
 
@@ -277,20 +281,43 @@ waiting list.
   (equal? (iworld-name world)
           ADMIN-CLIENT))
 
+;; GobblerUniverse iworld? -> GobblerBundle
+;; Add the admin to the universe
+(define (add-admin uni world)
+  (cond
+    [(waiting? uni)
+     (waiting world
+              (game-seen-players uni)
+              (game-queue uni))]
+    [(countdown? uni)
+     (countdown world
+                (game-seen-players uni)
+                (game-queue uni)
+                (ready-players uni)
+                (ready-foods uni)
+                (ready-time-left uni))]
+    [(playing? uni)
+     (playing world
+              (game-seen-players uni)
+              (game-queue uni)
+              (ready-players uni)
+              (ready-foods uni)
+              (ready-time-left uni))]))
+
 ;; GobblerUniverse iworld? -> GobblerUniverse
 ;; Queue the new player
 (define (queue-world uni world)
-  (log-world "INFO" (iworld-name world) "connected")
+  (log-world "INFO" (iworld-name world) (format "connected (~a)" (length (game-queue uni))))
 
   (let ([nu-q    (append (game-queue uni) (list world))]
         [nu-seen (extend-seen-players (game-seen-players uni) (iworld-name world))])
     (cond
       [(waiting? uni)
-       (waiting nu-seen nu-q)]
+       (waiting (game-admin uni) nu-seen nu-q)]
       [(countdown? uni)
-       (countdown nu-seen nu-q (ready-players uni) (ready-foods uni) (ready-time-left uni))]
+       (countdown (game-admin uni) nu-seen nu-q (ready-players uni) (ready-foods uni) (ready-time-left uni))]
       [else
-       (playing nu-seen nu-q (ready-players uni) (ready-foods uni) (ready-time-left uni))])))
+       (playing (game-admin uni) nu-seen nu-q (ready-players uni) (ready-foods uni) (ready-time-left uni))])))
 
 ;; [Listof string?] string? -> [Listof string?]
 ;; Add the new player name to the list, checking if they had already connected before
@@ -338,13 +365,15 @@ waiting list.
           (log-world "ERROR" (iworld-name world) "!!!BAD DISCONNECT!!!")))
 
   (cond
-    [(waiting? uni)   (waiting (game-seen-players uni) new-queue)]
-    [(countdown? uni) (countdown (game-seen-players uni)
+    [(waiting? uni)   (waiting (game-admin uni) (game-seen-players uni) new-queue)]
+    [(countdown? uni) (countdown (game-admin uni)
+                                 (game-seen-players uni)
                                  new-queue
                                  (drop-player* (ready-players uni))
                                  (ready-foods uni)
                                  (ready-time-left uni))]
-    [(playing? uni)   (playing (game-seen-players uni)
+    [(playing? uni)   (playing (game-admin uni)
+                               (game-seen-players uni)
                                new-queue
                                (drop-player* (ready-players uni))
                                (ready-foods uni)
@@ -377,8 +406,15 @@ waiting list.
                             (length (game-queue uni))
                             0)]
          [mail (map (λ (w) (make-mail w waiting-msg))
-                    (game-queue uni))])
+                    (non-players uni))])
     (make-bundle uni mail '())))
+
+;; GobblerUniverse -> [Listof iworld?]
+;; Get the list of connected non-players (queue + admin)
+(define (non-players uni)
+  (if (game-admin uni)
+      (cons (game-admin uni) (game-queue uni))
+      (game-queue uni)))
 
 ;; countdown? -> GobblerBundle
 ;; Advance the countdown state
@@ -387,12 +423,14 @@ waiting list.
     (if (<= (ready-time-left uni) 0)
         (begin
           (log-info "entering playing")
-          (playing (game-seen-players uni)
+          (playing (game-admin uni)
+                   (game-seen-players uni)
                    (game-queue uni)
                    (ready-players uni)
                    (ready-foods uni)
                    GAME-TICKS))
-        (countdown (game-seen-players uni)
+        (countdown (game-admin uni)
+                   (game-seen-players uni)
                    (game-queue uni)
                    (ready-players uni)
                    (ready-foods uni)
@@ -403,18 +441,18 @@ waiting list.
 ;; ready? -> (U CountdownMessage PlayingMessage)
 ;; Build the bundle for the given ready universe
 (define (ready-bundle uni)
-  (define queue-mail (ready-queue-mail uni))
+  (define non-player-mail (ready-non-player-mail uni))
   (define player-mail (ready-player-mail uni))
 
   (make-bundle uni
-               (append queue-mail player-mail)
+               (append non-player-mail player-mail)
                '()))
 
 ;; ready? -> [Listof Outgoing]
 ;; Build the mail for the users in the queue
-(define (ready-queue-mail uni)
+(define (ready-non-player-mail uni)
   (map (λ (world) (make-mail world (ready-msg uni #f)))
-       (game-queue uni)))
+       (non-players uni)))
 
 ;; ready? -> [Listof Outgoing]
 ;; Build the mail for the players in the game
@@ -463,7 +501,8 @@ waiting list.
   (if (<= (ready-time-left game) 0)
       (let ([player-worlds (map player-iworld (ready-players game))])
         (log-info "entering waiting")
-        (make-bundle (waiting (update-seen (game-seen-players game) (map iworld-name player-worlds))
+        (make-bundle (waiting (game-admin game)
+                              (update-seen (game-seen-players game) (map iworld-name player-worlds))
                               (append (game-queue game)
                                       player-worlds))
                      (game-over-mails game)
@@ -514,12 +553,12 @@ waiting list.
      (ready-players game)
      (ready-foods game)))
   (define new-uni
-    (playing
-     (game-seen-players game)
-     (game-queue game)
-     (move-all-players (first new-data))
-     (second new-data)
-     (sub1 (ready-time-left game))))
+    (playing (game-admin game)
+             (game-seen-players game)
+             (game-queue game)
+             (move-all-players (first new-data))
+             (second new-data)
+             (sub1 (ready-time-left game))))
 
   (ready-bundle new-uni))
 
@@ -626,22 +665,25 @@ waiting list.
 ;; Handle the admin message
 (define (administrate uni world sexp)
   (define (admin-error msg)
+    (log-admin msg)
     (make-bundle uni
-                 `(,(make-mail world msg))
+                 `(,(make-mail world (format "~a~n" msg)))
                  '()))
   (match sexp
     [`(size ,(? real? s)) (set! GAME-SIZE s)
+                          (log-admin (format "set size to ~a" GAME-SIZE))
                           uni]
     ['go (if (waiting? uni)
              (start-game uni)
-             (admin-error (format "Can't start; ~a~n" (universe-state uni))))]
-    [_ (admin-error (format "Unknown command: ~a~n" sexp))]))
+             (admin-error (format "Can't start; ~a" (universe-state uni))))]
+    [_ (admin-error (format "Unknown command: ~a" sexp))]))
 
 ;; waiting? -> GobblerUniverse
 ;; Start the game with all the players
 (define (start-game uni)
   (log-info "entering countdown")
-  (countdown (game-seen-players uni)
+  (countdown (game-admin uni)
+             (game-seen-players uni)
              '()
              (map new-player (game-queue uni))
              (generate-food)
@@ -650,7 +692,8 @@ waiting list.
 ;; GobblerUniverse iworld? sexp? -> GobblerBundle
 ;; Update the waypoint of the player
 (define (update-waypoint uni world sexp)
-  (playing (game-seen-players uni)
+  (playing (game-admin uni)
+           (game-seen-players uni)
            (game-queue uni)
            (update-waypoint/players (ready-players uni) world sexp)
            (ready-foods uni)
@@ -839,41 +882,41 @@ waiting list.
   (define SEEN3 (cons (cons "iworld3" 0)
                       SEEN2))
 
-  (define WAITING0   (waiting SEEN0 '()))
-  (define WAITING1   (waiting SEEN1 `(,iworld1)))
-  (define WAITING1.1 (waiting SEEN1 '()))
-  (define WAITING2   (waiting SEEN2 `(,iworld1 ,iworld2)))
-  (define WAITING2.1 (waiting SEEN2.1 `(,iworld1 ,iworld2)))
-  (define COUNTDOWN0 (countdown SEEN2 '() `(,PLAYER1 ,PLAYER2)
+  (define WAITING0   (waiting #f SEEN0 '()))
+  (define WAITING1   (waiting #f SEEN1 `(,iworld1)))
+  (define WAITING1.1 (waiting #f SEEN1 '()))
+  (define WAITING2   (waiting #f SEEN2 `(,iworld1 ,iworld2)))
+  (define WAITING2.1 (waiting #f SEEN2.1 `(,iworld1 ,iworld2)))
+  (define COUNTDOWN0 (countdown #f SEEN2 '() `(,PLAYER1 ,PLAYER2)
                                 `(,POSN0 ,POSN1) COUNTDOWN-TICKS))
-  (define COUNTDOWN1 (countdown SEEN3 `(,iworld3)
+  (define COUNTDOWN1 (countdown #f SEEN3 `(,iworld3)
                                 `(,PLAYER1 ,PLAYER2)
                                 `(,POSN0 ,POSN1) COUNTDOWN-TICKS))
-  (define COUNTDOWN1.1 (countdown SEEN3 '()
+  (define COUNTDOWN1.1 (countdown #f SEEN3 '()
                                   `(,PLAYER1 ,PLAYER2)
                                   `(,POSN0 ,POSN1) COUNTDOWN-TICKS))
-  (define COUNTDOWN2 (countdown SEEN3 `(,iworld3)
+  (define COUNTDOWN2 (countdown #f SEEN3 `(,iworld3)
                                 `(,PLAYER2) `(,POSN0 ,POSN1)
                                 COUNTDOWN-TICKS))
-  (define COUNTDOWN3 (countdown SEEN2 '() `(,PLAYER1 ,PLAYER2)
+  (define COUNTDOWN3 (countdown #f SEEN2 '() `(,PLAYER1 ,PLAYER2)
                                 `(,POSN0 ,POSN1) (- COUNTDOWN-TICKS 1)))
-  (define COUNTDOWN4 (countdown SEEN2 '() `(,PLAYER1 ,PLAYER2)
+  (define COUNTDOWN4 (countdown #f SEEN2 '() `(,PLAYER1 ,PLAYER2)
                                 `(,POSN0 ,POSN1) 0))
-  (define PLAYING0   (playing SEEN2 '() `(,PLAYER1 ,PLAYER2)
+  (define PLAYING0   (playing #f SEEN2 '() `(,PLAYER1 ,PLAYER2)
                               `(,POSN0 ,POSN1) GAME-TICKS))
-  (define PLAYING0.1 (playing SEEN2 '() `(,PLAYER1.2 ,PLAYER2) `(,POSN0 ,POSN1)
+  (define PLAYING0.1 (playing #f SEEN2 '() `(,PLAYER1.2 ,PLAYER2) `(,POSN0 ,POSN1)
                               (- GAME-TICKS 1)))
-  (define PLAYING1   (playing SEEN3 `(,iworld3) `(,PLAYER1 ,PLAYER2)
+  (define PLAYING1   (playing #f SEEN3 `(,iworld3) `(,PLAYER1 ,PLAYER2)
                               `(,POSN0 ,POSN1) GAME-TICKS))
-  (define PLAYING1.1 (playing SEEN3`(,iworld3) `(,PLAYER1.1 ,PLAYER2)
+  (define PLAYING1.1 (playing #f SEEN3`(,iworld3) `(,PLAYER1.1 ,PLAYER2)
                               `(,POSN0 ,POSN1) GAME-TICKS))
-  (define PLAYING1.2 (playing SEEN3 `(,iworld3) `(,PLAYER2)
+  (define PLAYING1.2 (playing #f SEEN3 `(,iworld3) `(,PLAYER2)
                               `(,POSN0 ,POSN1) GAME-TICKS))
-  (define PLAYING1.3 (playing SEEN3 '() `(,PLAYER1 ,PLAYER2)
+  (define PLAYING1.3 (playing #f SEEN3 '() `(,PLAYER1 ,PLAYER2)
                               `(,POSN0 ,POSN1) GAME-TICKS))
-  (define PLAYING2   (playing SEEN3 `(,iworld3) `(,PLAYER2) `(,POSN0 ,POSN1)
+  (define PLAYING2   (playing #f SEEN3 `(,iworld3) `(,PLAYER2) `(,POSN0 ,POSN1)
                               GAME-TICKS))
-  (define PLAYING3   (playing SEEN2 '() `(,PLAYER1 ,PLAYER2) `(,POSN0 ,POSN1)
+  (define PLAYING3   (playing #f SEEN2 '() `(,PLAYER1 ,PLAYER2) `(,POSN0 ,POSN1)
                               0))
 
   (define BUNDLE0    (make-bundle
