@@ -214,7 +214,7 @@ waiting list.
 (define COUNTDOWN-TICKS (seconds->ticks 3))
 (define GAME-TICKS (seconds->ticks 60))
 (define NUM-PLAYERS 2)
-(define MAX-FOODS 2)
+(define MAX-FOODS NUM-PLAYERS)
 
 (define INITIAL-STATE (waiting '()))
 
@@ -228,7 +228,8 @@ waiting list.
 ;; SERVER
 ;; =====================================
 
-(define (main p (gt GAME-TICKS))
+(define (main p (ps NUM-PLAYERS) (gt GAME-TICKS))
+  (set! NUM-PLAYERS (if (string? ps) (string->number ps) ps))
   (set! GAME-TICKS (if (string? gt) (string->number gt) gt))
   (define the-port (if (string? p) (string->number p) p))
   (unless (and (number? the-port) (number? GAME-TICKS))
