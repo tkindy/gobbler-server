@@ -178,7 +178,7 @@
           (define msg1 (string-append p#-str " are waiting, "))
           (define msg2 (string-append min-str " are needed"))
           (define txt (above (text msg1 22 TEXT-COLOR) (text msg2 22 TEXT-COLOR))))
-    (place-image txt 22 44 BACKGROUND)))
+    (place-image txt (/ SIZE 2) (/ SIZE 2) BACKGROUND)))
 
 ;; [Listof String] -> Image
 (define (render-over my-color s)
